@@ -16,6 +16,15 @@ import {
 import { StudentDashboard, StudentCoursesPage } from '@/pages/StudentDashboardPage';
 import { StudentLessonPage } from '@/pages/StudentLessonPage';
 import {
+  StudentAssignmentsPage,
+  StudentQuizzesPage,
+  StudentResultsPage,
+  StudentCertificatesPage,
+  StudentNotificationsPage,
+  StudentProfilePage,
+  StudentSettingsPage,
+} from '@/pages/StudentPages';
+import {
   AdminDashboard,
   AdminStudentsPage,
   AdminCoursesPage,
@@ -62,6 +71,13 @@ function App() {
             <Route path="dashboard" element={<StudentDashboard />} />
             <Route path="courses" element={<StudentCoursesPage />} />
             <Route path="courses/:courseId/lessons" element={<StudentLessonPage />} />
+            <Route path="assignments" element={<StudentAssignmentsPage />} />
+            <Route path="quizzes" element={<StudentQuizzesPage />} />
+            <Route path="results" element={<StudentResultsPage />} />
+            <Route path="certificates" element={<StudentCertificatesPage />} />
+            <Route path="notifications" element={<StudentNotificationsPage />} />
+            <Route path="profile" element={<StudentProfilePage />} />
+            <Route path="settings" element={<StudentSettingsPage />} />
           </Route>
         </Route>
 

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   BookOpen, Clock, ArrowRight, PlayCircle, Check, ArrowLeft,
   Trophy, Certificate, FilePdf, Download, ListDashes,
-  Spinner, Lock, FileText, Image,
+  Spinner, Lock, FileText, Image as ImageIcon,
 } from '@phosphor-icons/react';
 import { ROUTES } from '@/constants/navigation';
 import { Badge } from '@/components/ui/badge';
@@ -14,11 +14,7 @@ import { toast } from 'sonner';
 import { getSignedUrl } from '@/services/storageService';
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-type LessonRow = {
-  id: string; title: string; description: string | null; duration: string | null;
-  type: string; content: string | null; video_url: string | null;
-  is_free_preview: boolean | null; sort_order: number | null;
-};
+type LessonRow = { id: string; title: string; description: string | null; duration: string | null; type: string; content: string | null; video_url: string | null; is_free_preview: boolean | null; sort_order: number | null };
 type ModuleRow = { id: string; title: string; lessons: LessonRow[] };
 type CourseRow = { id: string; title: string; slug: string; total_lessons: number | null; total_modules: number | null; instructors?: { name: string }[] };
 type EnrollmentRow = { id: string; completed_at: string | null; progress: number | null; status: string };
@@ -273,7 +269,7 @@ export function StudentLessonPage() {
                       ) : (
                         <div className="space-y-2">
                           {resources.map((res) => {
-                            const ResIcon = res.mime_type?.includes('pdf') ? FilePdf : res.mime_type?.includes('image') ? Image : FileText;
+                            const ResIcon = res.mime_type?.includes('pdf') ? FilePdf : res.mime_type?.includes('image') ? ImageIcon : FileText;
                             return (
                               <div key={res.id} className="flex items-center gap-3 p-3 rounded-lg bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
                                 <ResIcon size={20} className="text-emerald-600 shrink-0" />

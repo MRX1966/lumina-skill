@@ -1,830 +1,590 @@
 import { Link, useParams } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
-import { BookOpen, Clock, ArrowRight, PlayCircle, Check, ArrowLeft, Trophy, Certificate, FilePdf, Download, Pause, Play, ListDashes, CheckCircle, Spinner, Lock, FileText, Image as ImageIcon, XCircle } from '@phosphor-icons/react';
+import { motion } from 'framer-motion';
+import {
+  BookOpen, Clock, ArrowRight, PlayCircle, Check, ArrowLeft, Trophy,
+  Certificate, FilePdf, Download, ListDashes, Spinner, Lock,
+  ClipboardText, Exam, TrendUp, Bell, UserCircle, GearSix, Pencil,
+  Phone, Envelope, Key, Eye, EyeSlash, ChatCenteredText, ShieldCheck,
+  MagnifyingGlass, DotsThreeVertical, SignOut, XCircle,
+} from '@phosphor-icons/react';
 import { ROUTES } from '@/constants/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
+import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { getSignedUrl, checkEnrollmentAccess } from '@/services/storageService';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { getSignedUrl } from '@/services/storageService';
+import { useState, useEffect } from 'react';
 
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1, transition: { staggerChildren: 0.06 } },
-};
-const itemVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: { opacity: 1, y: 0, transition: { ease: 'easeOut' as const } },
-};
+type EnrollmentRow = { id: string; course_id: string; status: string; progress: number | null; enrolled_at: string | null; completed_at: string | null };
+type CourseRow = { id: string; title: string; slug: string; image: string | null; duration_hours: number | null; total_lessons: number | null; total_modules: number | null };
+type AssignmentItem = { id: string; title: string; description: string | null; due_date: string | null; status: string; max_score: number | null; score: number | null; submitted_at: string | null; lesson_title: string };
+type QuizResultItem = { id: string; score: number | null; total_questions: number | null; passed: boolean | null; created_at: string | null; lesson_title: string };
+type NotificationItem = { id: string; title: string; message: string; type: string; read: boolean | null; created_at: string | null };
+type UserProfile = { full_name: string | null; avatar_url: string | null; bio: string | null; phone: string | null; email: string | null };
 
-// ─── Types from DB ───────────────────────────────────────────────────
-type LessonRow = {
-  id: string;
-  title: string;
-  description: string | null;
-  duration: string | null;
-  type: string;
-  content: string | null;
-  video_url: string | null;
-  is_free_preview: boolean | null;
-  sort_order: number | null;
-};
+const itemVariants = { hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0, transition: { ease: 'easeOut' as const } } };
 
-type ModuleRow = {
-  id: string;
-  title: string;
-  lessons: LessonRow[];
-};
-
-type CourseRow = {
-  id: string;
-  title: string;
-  slug: string;
-  total_lessons: number | null;
-  total_modules: number | null;
-  instructors?: { name: string }[];
-};
-
-type EnrollmentRow = {
-  id: string;
-  course_id: string;
-  completed_at: string | null;
-  progress: number | null;
-  status: string;
-};
-
-type LessonProgressRow = {
-  id: string;
-  lesson_id: string;
-  completed: boolean | null;
-  completed_at: string | null;
-  time_spent_seconds: number | null;
-  last_position_seconds: number | null;
-  started_at: string | null;
-};
-
-// ─── Student Dashboard ───────────────────────────────────────────────
-export function StudentDashboard() {
-  const [enrollments, setEnrollments] = useState<EnrollmentRow[]>([]);
-  const [courses, setCourses] = useState<CourseRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function load() {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-
-        const [{ data: enrollData }, { data: courseData }] = await Promise.all([
-          supabase.from('enrollments').select('*').eq('user_id', user.id),
-          supabase.from('courses').select('id, title, slug, total_lessons, total_modules').in('status', ['published']),
-        ]);
-
-        setEnrollments(enrollData || []);
-        setCourses(courseData || []);
-      } catch (err: any) {
-        setError(err.message || 'Failed to load dashboard');
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
-
-  if (loading) {
-    return (
-      <motion.div initial="hidden" animate="visible" variants={containerVariants}>
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 w-48 bg-zinc-200 dark:bg-zinc-800 rounded" />
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="h-20 bg-zinc-200 dark:bg-zinc-800 rounded-xl" />
-            ))}
-          </div>
-        </div>
-      </motion.div>
-    );
-  }
-
-  const inProgress = enrollments.filter((e) => (e.progress || 0) < 100);
-  const completed = enrollments.filter((e) => e.completed_at);
-
-  const stats = [
-    { icon: BookOpen, label: 'Enrolled Courses', value: enrollments.length, color: 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' },
-    { icon: PlayCircle, label: 'In Progress', value: inProgress.length, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20' },
-    { icon: Trophy, label: 'Completed', value: completed.length, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20' },
-    { icon: Certificate, label: 'Certificates', value: 0, color: 'text-purple-600 bg-purple-50 dark:bg-purple-900/20' },
-  ];
-
-  return (
-    <motion.div initial="hidden" animate="visible" variants={containerVariants}>
-      <motion.div variants={itemVariants} className="mb-8">
-        <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-zinc-900 dark:text-white">Student Dashboard</h1>
-        <p className="text-zinc-500 dark:text-zinc-400 mt-1">Track your learning progress and achievements</p>
-      </motion.div>
-
-      <motion.div variants={itemVariants} className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {stats.map((stat) => (
-          <Card key={stat.label} className="border-zinc-200 dark:border-zinc-800">
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${stat.color}`}>
-                <stat.icon size={20} />
-              </div>
-              <div>
-                <p className="text-xl font-bold text-zinc-900 dark:text-white">{stat.value}</p>
-                <p className="text-xs text-zinc-500">{stat.label}</p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </motion.div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          <motion.div variants={itemVariants}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-zinc-900 dark:text-white">In Progress</h2>
-              <Link to={ROUTES.studentCourses} className="text-sm text-emerald-600 hover:text-emerald-700 flex items-center gap-1">
-                View All <ArrowRight size={14} />
-              </Link>
-            </div>
-            <div className="space-y-3">
-              {inProgress.length === 0 ? (
-                <Card className="border-zinc-200 dark:border-zinc-800">
-                  <CardContent className="p-6 text-center">
-                    <BookOpen size={32} className="mx-auto text-zinc-300 mb-2" />
-                    <p className="text-sm text-zinc-500">No courses in progress. Enroll in one to get started!</p>
-                    <Link to={ROUTES.courses}><Button variant="outline" size="sm" className="mt-3">Browse Courses</Button></Link>
-                  </CardContent>
-                </Card>
-              ) : (
-                inProgress.map((enrollment) => {
-                  const course = courses.find((c) => c.id === enrollment.course_id);
-                  if (!course) return null;
-                  return (
-                    <Link key={enrollment.id} to={`/student/courses/${course.id}/lessons`} className="group block">
-                      <Card className="border-zinc-200 dark:border-zinc-800 hover:border-emerald-300 dark:hover:border-emerald-700 transition-all">
-                        <CardContent className="p-4">
-                          <div className="flex items-center gap-4">
-                            <div className="w-16 h-12 rounded-lg bg-zinc-100 dark:bg-zinc-800 overflow-hidden shrink-0">
-                              <img src="" alt={course.title} className="w-full h-full object-cover" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-sm text-zinc-900 dark:text-white group-hover:text-emerald-600 transition-colors">{course.title}</p>
-                              <div className="flex items-center gap-2 mt-1">
-                                <Progress value={enrollment.progress || 0} className="h-1.5 flex-1" />
-                                <span className="text-xs text-zinc-500">{Math.round(enrollment.progress || 0)}%</span>
-                              </div>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </Link>
-                  );
-                })
-              )}
-            </div>
-          </motion.div>
-        </div>
-
-        <div className="space-y-6">
-          <motion.div variants={itemVariants}>
-            <Card className="border-zinc-200 dark:border-zinc-800">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Trophy size={16} className="text-emerald-600" />
-                  Recent Achievement
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {completed.length > 0 ? (
-                  <div>
-                    <p className="text-sm font-medium text-zinc-900 dark:text-white">Course Completed!</p>
-                    <p className="text-xs text-zinc-500 mt-1">Keep up the great work</p>
-                  </div>
-                ) : (
-                  <p className="text-sm text-zinc-500">Complete a course to earn an achievement</p>
-                )}
-              </CardContent>
-            </Card>
-          </motion.div>
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-// ─── My Courses Page ─────────────────────────────────────────────────
+/* ─── My Courses Page ─── */
 export function StudentCoursesPage() {
-  const [enrollments, setEnrollments] = useState<EnrollmentRow[]>([]);
-  const [courses, setCourses] = useState<CourseRow[]>([]);
+  const [courses, setCourses] = useState<{ enrollment: EnrollmentRow; course: CourseRow | null }[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
 
   useEffect(() => {
     async function load() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-
-        const [{ data: enrollData }, { data: courseData }] = await Promise.all([
-          supabase.from('enrollments').select('*').eq('user_id', user.id),
-          supabase.from('courses').select('id, title, slug, total_lessons, total_modules').in('status', ['published']),
-        ]);
-
-        setEnrollments(enrollData || []);
-        setCourses(courseData || []);
-      } catch (err: any) {
-        setError(err.message || 'Failed to load courses');
-      } finally {
-        setLoading(false);
-      }
+        if (!user) { setLoading(false); return; }
+        const { data: enrollData } = await supabase.from('enrollments').select('*').eq('user_id', user.id).order('enrolled_at', { ascending: false });
+        const enrollments = (enrollData || []) as EnrollmentRow[];
+        const enriched = await Promise.all(
+          enrollments.map(async (e) => {
+            const { data: c } = await supabase.from('courses').select('*').eq('id', e.course_id).single();
+            return { enrollment: e, course: (c as CourseRow | undefined) || null };
+          }),
+        );
+        setCourses(enriched);
+      } catch (err: any) { toast.error(err.message || 'Failed to load courses'); }
+      finally { setLoading(false); }
     }
     load();
   }, []);
 
-  if (loading) {
-    return (
-      <motion.div initial="hidden" animate="visible" variants={containerVariants}>
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 w-48 bg-zinc-200 dark:bg-zinc-800 rounded" />
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-24 bg-zinc-200 dark:bg-zinc-800 rounded-xl" />
-          ))}
-        </div>
-      </motion.div>
-    );
-  }
+  const filtered = filter === 'all' ? courses : courses.filter((c) => c.enrollment.status === filter);
+
+  if (loading) return <div className="space-y-4">{[0, 1, 2].map((i) => (<div key={i} className="h-32 bg-zinc-100 dark:bg-zinc-800 rounded-xl animate-pulse" />))}</div>;
 
   return (
-    <motion.div initial="hidden" animate="visible" variants={containerVariants}>
-      <motion.div variants={itemVariants} className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">My Courses</h1>
-        <p className="text-zinc-500 dark:text-zinc-400 text-sm mt-1">All your enrolled courses at a glance</p>
-      </motion.div>
-
-      {error && (
-        <Card className="border-red-200 dark:border-red-900/50">
-          <CardContent className="p-6 text-center">
-            <XCircle size={48} className="mx-auto text-red-300 mb-4" />
-            <h3 className="text-lg font-semibold mb-1 text-zinc-900 dark:text-white">Error loading courses</h3>
-            <p className="text-sm text-zinc-500 mb-4">{error}</p>
-            <Button onClick={() => window.location.reload()} variant="outline">Retry</Button>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="space-y-4">
-        {enrollments.length === 0 ? (
-          <Card className="border-zinc-200 dark:border-zinc-800">
-            <CardContent className="p-8 text-center">
-              <BookOpen size={48} className="mx-auto text-zinc-300 mb-4" />
-              <h3 className="text-lg font-semibold mb-1">No courses yet</h3>
-              <p className="text-sm text-zinc-500 mb-4">Enroll in your first course to start learning</p>
-              <Link to={ROUTES.courses}><Button className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">Browse Courses <ArrowRight size={16} /></Button></Link>
-            </CardContent>
-          </Card>
-        ) : (
-          enrollments.map((enrollment) => {
-            const course = courses.find((c) => c.id === enrollment.course_id);
+    <motion.div initial="hidden" animate="visible" className="space-y-4">
+      <h1 className="text-2xl font-bold text-zinc-900 dark:text-white mb-6">My Courses</h1>
+      <Tabs defaultValue={filter} onValueChange={(v) => setFilter(v as typeof filter)} className="mb-6">
+        <TabsList><TabsTrigger value="all">All ({courses.length})</TabsTrigger><TabsTrigger value="active">In Progress</TabsTrigger><TabsTrigger value="completed">Completed</TabsTrigger></TabsList>
+      </Tabs>
+      {filtered.length === 0 ? (
+        <Card className="border-dashed border-zinc-300 dark:border-zinc-700"><CardContent className="p-10 text-center">
+          <BookOpen size={48} className="mx-auto text-zinc-300 mb-4" />
+          <h3 className="font-semibold text-zinc-900 dark:text-white mb-1">No courses found</h3>
+          <Link to={ROUTES.courses}><Button className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 mt-4">Browse Courses <ArrowRight size={16} /></Button></Link>
+        </CardContent></Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.map((item) => {
+            const { course, enrollment } = item;
             if (!course) return null;
+            const pct = Math.round(Number(enrollment.progress || 0));
             return (
               <motion.div key={enrollment.id} variants={itemVariants}>
-                <Link to={`/student/courses/${course.id}/lessons`} className="group block">
-                  <Card className="border-zinc-200 dark:border-zinc-800 hover:border-emerald-300 dark:hover:border-emerald-700 transition-all">
+                <Link to={`/student/courses/${course.id}/lessons`}>
+                  <Card className="border-zinc-200 dark:border-zinc-800 h-full overflow-hidden hover:shadow-lg hover:shadow-emerald-900/5 transition-shadow cursor-pointer group">
+                    <div className="aspect-video bg-zinc-100 dark:bg-zinc-800 relative overflow-hidden">
+                      {course.image ? <img src={course.image} alt={course.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" /> : <PlayCircle size={40} className="absolute inset-0 m-auto text-zinc-300" />}
+                      <Badge className={`absolute top-3 right-3 ${enrollment.status === 'completed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'} border-0 text-xs`}>{enrollment.status}</Badge>
+                    </div>
                     <CardContent className="p-4">
-                      <div className="flex items-start gap-4">
-                        <div className="w-24 h-16 rounded-lg bg-zinc-100 dark:bg-zinc-800 overflow-hidden shrink-0">
-                          <img src="" alt={course.title} className="w-full h-full object-cover" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <Badge variant="secondary" className="text-xs">General</Badge>
-                            <span className="text-xs text-zinc-400 capitalize">beginner</span>
-                          </div>
-                          <p className="font-semibold text-sm text-zinc-900 dark:text-white group-hover:text-emerald-600 transition-colors">{course.title}</p>
-                          <div className="flex items-center gap-4 mt-2">
-                            <Progress value={enrollment.progress || 0} className="h-1.5 flex-1 max-w-[200px]" />
-                            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">{Math.round(enrollment.progress || 0)}% complete</span>
-                          </div>
-                        </div>
-                        <PlayCircle size={24} className="text-zinc-300 group-hover:text-emerald-500 transition-colors shrink-0" weight="fill" />
-                      </div>
+                      <h3 className="font-semibold text-sm text-zinc-900 dark:text-white line-clamp-2 mb-2">{course.title}</h3>
+                      <div className="flex items-center gap-3 text-xs text-zinc-400 mb-3"><span className="flex items-center gap-1"><PlayCircle size={12} />{course.total_lessons || 0} lessons</span><span className="flex items-center gap-1"><Clock size={12} />{course.duration_hours || 0}h</span></div>
+                      {pct > 0 && <div className="flex items-center gap-2"><div className="flex-1 h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} /></div><span className="text-xs font-medium text-zinc-500">{pct}%</span></div>}
                     </CardContent>
                   </Card>
                 </Link>
               </motion.div>
             );
-          })
-        )}
-      </div>
+          })}
+        </div>
+      )}
     </motion.div>
   );
 }
 
-// ─── Rich Lesson Player ──────────────────────────────────────────────
-export function StudentLessonPage() {
-  const { courseId } = useParams();
-  const [course, setCourse] = useState<CourseRow | null>(null);
-  const [modules, setModules] = useState<ModuleRow[]>([]);
-  const [allLessons, setAllLessons] = useState<LessonRow[]>([]);
-  const [currentLesson, setCurrentLesson] = useState<LessonRow | null>(null);
-  const [lessonProgress, setLessonProgress] = useState<LessonProgressRow | null>(null);
-  const [enrollment, setEnrollment] = useState<EnrollmentRow | null>(null);
+/* ─── Assignments Page ─── */
+export function StudentAssignmentsPage() {
+  const [assignments, setAssignments] = useState<AssignmentItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [videoSrc, setVideoSrc] = useState<string>('');
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [downloadingResource, setDownloadingResource] = useState<string | null>(null);
-  const [showResources, setShowResources] = useState(false);
-  const [resources, setResources] = useState<any[]>([]);
-  const [savingProgress, setSavingProgress] = useState(false);
 
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  // Flatten lessons from modules
-  useEffect(() => {
-    const flat = modules.flatMap(m => m.lessons).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-    setAllLessons(flat);
-  }, [modules]);
-
-  // Find current lesson
-  useEffect(() => {
-    if (allLessons.length > 0 && !currentLesson) {
-      setCurrentLesson(allLessons[0]);
-    }
-  }, [allLessons, currentLesson]);
-
-  // Load lesson data
   useEffect(() => {
     async function load() {
-      if (!courseId) return;
-      setLoading(true);
-      setError(null);
-
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          setError('Please log in to access lessons');
-          setLoading(false);
-          return;
-        }
-
-        // Check enrollment
-        const { data: enrollData } = await supabase
-          .from('enrollments')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('course_id', courseId)
-          .single();
-
-        if (!enrollData) {
-          setError('You are not enrolled in this course');
-          setEnrollment(null);
-        } else {
-          setEnrollment(enrollData);
-        }
-
-        // Fetch course
-        const { data: courseData } = await supabase
-          .from('courses')
-          .select('*, instructors:instructor_id(name)')
-          .eq('id', courseId)
-          .single();
-        setCourse(courseData as unknown as CourseRow);
-
-        // Fetch modules + lessons
-        const { data: moduleData } = await supabase
-          .from('modules')
-          .select('*, lessons(*)')
-          .eq('course_id', courseId)
-          .order('sort_order', { ascending: true });
-        setModules(moduleData as unknown as ModuleRow[]);
-
-        // Fetch lesson progress
-        const { data: progressData } = await supabase
-          .from('lesson_progress')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('lesson_id', allLessons[0]?.id || '');
-        if (progressData?.[0]) setLessonProgress(progressData[0]);
-
-        // Fetch lesson resources
-        const { data: resData } = await supabase
-          .from('lesson_resources')
-          .select('*')
-          .eq('lesson_id', allLessons[0]?.id || '')
-          .order('sort_order', { ascending: true });
-        setResources(resData || []);
-      } catch (err: any) {
-        setError(err.message || 'Failed to load lesson');
-      } finally {
-        setLoading(false);
-      }
+        if (!user) { setLoading(false); return; }
+        const { data: enrollData } = await supabase.from('enrollments').select('course_id').eq('user_id', user.id);
+        const courseIds = (enrollData || []).map((e: any) => e.course_id);
+        if (courseIds.length === 0) { setLoading(false); return; }
+        const { data: assignData } = await supabase.from('assignments').select(`*, lessons:lesson_id(title)`).in('course_id', courseIds).order('due_date', { ascending: true });
+        if (assignData) setAssignments((assignData as any[]).map((a) => ({ ...a, lesson_title: a.lessons?.title || '' })));
+      } catch (err: any) { toast.error(err.message || 'Failed to load assignments'); }
+      finally { setLoading(false); }
     }
     load();
-  }, [courseId, allLessons[0]?.id]);
+  }, []);
 
-  // Load signed URL when current lesson changes
+  if (loading) return <div className="space-y-4">{[0, 1, 2].map((i) => (<div key={i} className="h-20 bg-zinc-100 dark:bg-zinc-800 rounded-xl animate-pulse" />))}</div>;
+
+  return (
+    <motion.div initial="hidden" animate="visible" className="space-y-6">
+      <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">Assignments</h1>
+      {assignments.length === 0 ? (
+        <Card className="border-dashed border-zinc-300 dark:border-zinc-700"><CardContent className="p-10 text-center">
+          <ClipboardText size={48} className="mx-auto text-zinc-300 mb-4" />
+          <h3 className="font-semibold text-zinc-900 dark:text-white mb-1">No assignments yet</h3>
+          <p className="text-sm text-zinc-500">Your instructors will post assignments here.</p>
+        </CardContent></Card>
+      ) : (
+        <div className="space-y-3">
+          {assignments.map((a) => (
+            <Card key={a.id} className="border-zinc-200 dark:border-zinc-800">
+              <CardContent className="p-4 flex items-center gap-4">
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                  a.status === 'graded' ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/30' :
+                  a.status === 'submitted' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30' :
+                  'bg-amber-100 text-amber-600 dark:bg-amber-900/30'}`}>
+                  <ClipboardText size={20} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-medium text-sm text-zinc-900 dark:text-white">{a.title}</h3>
+                  <p className="text-xs text-zinc-500">{a.lesson_title}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  {a.score !== null && <p className="text-sm font-bold text-zinc-900 dark:text-white">{a.score}/{a.max_score ?? '?'}</p>}
+                  <Badge variant="secondary" className="text-xs capitalize">{a.status}</Badge>
+                </div>
+                <span className="text-xs text-zinc-400 shrink-0">{a.due_date ? new Date(a.due_date).toLocaleDateString() : 'No deadline'}</span>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+/* ─── Quizzes Page ─── */
+export function StudentQuizzesPage() {
+  const [quizzes, setQuizzes] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
-    if (!currentLesson || !currentLesson.video_url) {
-      setVideoSrc('');
-      return;
-    }
-
-    async function loadVideo() {
+    async function load() {
       try {
-        const url = await getSignedUrl('course-videos', currentLesson.video_url, 3600);
-        setVideoSrc(url);
-        // Restore position
-        if (lessonProgress?.last_position_seconds) {
-          setTimeout(() => {
-            if (videoRef.current) {
-              videoRef.current.currentTime = lessonProgress.last_position_seconds;
-            }
-          }, 500);
-        }
-      } catch {
-        setVideoSrc('');
-      }
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { setLoading(false); return; }
+        const { data: enrollData } = await supabase.from('enrollments').select('course_id').eq('user_id', user.id);
+        const courseIds = (enrollData || []).map((e: any) => e.course_id);
+        if (courseIds.length === 0) { setLoading(false); return; }
+        const { data } = await supabase.from('quiz_results').select(`*, lessons:lesson_id(title), quizzes:quiz_id(title, passing_score)`).in('course_id', courseIds).order('created_at', { ascending: false });
+        if (data) setQuizzes(data as any[]);
+      } catch (err: any) { toast.error(err.message || 'Failed to load quizzes'); }
+      finally { setLoading(false); }
     }
-    loadVideo();
-  }, [currentLesson?.id, currentLesson?.video_url, lessonProgress?.last_position_seconds]);
+    load();
+  }, []);
 
-  // Throttled progress save
-  const saveProgressThrottled = useCallback(async () => {
-    if (!currentLesson || savingProgress) return;
-    setSavingProgress(true);
-    try {
-      const pos = videoRef.current?.currentTime || 0;
-      const { error } = await supabase
-        .from('lesson_progress')
-        .upsert({
-          user_id: (await supabase.auth.getUser()).data.user?.id,
-          lesson_id: currentLesson.id,
-          last_position_seconds: Math.floor(pos),
-          started_at: new Date().toISOString(),
-        }, { onConflict: 'user_id,lesson_id' });
-      if (error) console.error('save progress error:', error);
-    } catch { /* silent */ }
-    setSavingProgress(false);
-  }, [currentLesson?.id, savingProgress]);
+  if (loading) return <div className="space-y-4">{[0, 1, 2].map((i) => (<div key={i} className="h-20 bg-zinc-100 dark:bg-zinc-800 rounded-xl animate-pulse" />))}</div>;
 
-  // Video event handlers
-  const handlePlayPause = () => {
-    if (!videoRef.current) return;
-    if (isPlaying) {
-      videoRef.current.pause();
-    } else {
-      videoRef.current.play();
+  return (
+    <motion.div initial="hidden" animate="visible" className="space-y-6">
+      <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">Quizzes</h1>
+      {quizzes.length === 0 ? (
+        <Card className="border-dashed border-zinc-300 dark:border-zinc-700"><CardContent className="p-10 text-center">
+          <Exam size={48} className="mx-auto text-zinc-300 mb-4" />
+          <h3 className="font-semibold text-zinc-900 dark:text-white mb-1">No quiz results yet</h3>
+          <p className="text-sm text-zinc-500">Complete lessons with quizzes to see your results here.</p>
+        </CardContent></Card>
+      ) : (
+        <div className="space-y-3">
+          {quizzes.map((q) => (
+            <Card key={q.id} className="border-zinc-200 dark:border-zinc-800">
+              <CardContent className="p-4 flex items-center gap-4">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${q.passed ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30' : 'bg-red-100 text-red-600 dark:bg-red-900/30'}`}>
+                  {q.passed ? <Check size={20} weight="bold" /> : <XCircle size={20} weight="bold" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-medium text-sm text-zinc-900 dark:text-white">{q.quizzes?.title || q.lessons?.title || 'Quiz'}</h3>
+                  <p className="text-xs text-zinc-500">{q.lessons?.title}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-sm font-bold text-zinc-900 dark:text-white">{q.score !== null ? `${Math.round((q.score / q.total_questions!) * 100)}%` : 'N/A'}</p>
+                  <p className="text-xs text-zinc-500">{q.score}/{q.total_questions}</p>
+                </div>
+                <span className="text-xs text-zinc-400 shrink-0">{q.created_at ? new Date(q.created_at).toLocaleDateString() : ''}</span>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+/* ─── Results Page ─── */
+export function StudentResultsPage() {
+  const [results, setResults] = useState<QuizResultItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { setLoading(false); return; }
+        const { data: enrollData } = await supabase.from('enrollments').select('course_id').eq('user_id', user.id);
+        const courseIds = (enrollData || []).map((e: any) => e.course_id);
+        if (courseIds.length === 0) { setLoading(false); return; }
+        const { data } = await supabase.from('quiz_results').select(`*, lessons:lesson_id(title)`).in('course_id', courseIds).order('created_at', { ascending: false });
+        if (data) setResults((data as any[]).map((r) => ({ ...r, lesson_title: r.lessons?.title || '' })));
+      } catch (err: any) { toast.error(err.message || 'Failed to load results'); }
+      finally { setLoading(false); }
     }
-    setIsPlaying(!isPlaying);
-  };
+    load();
+  }, []);
 
-  const handleTimeUpdate = () => {
-    if (videoRef.current) {
-      setCurrentTime(videoRef.current.currentTime);
-      // Save every ~30 seconds
-      if (Math.floor(videoRef.current.currentTime) % 30 === 0) {
-        saveProgressThrottled();
-      }
+  const avgScore = results.length > 0 ? Math.round(results.reduce((s, r) => s + (r.score && r.total_questions ? (r.score / r.total_questions) * 100 : 0), 0) / results.length) : 0;
+  const passRate = results.length > 0 ? Math.round((results.filter((r) => r.passed).length / results.length) * 100) : 0;
+
+  if (loading) return <div className="space-y-4">{[0, 1, 2].map((i) => (<div key={i} className="h-20 bg-zinc-100 dark:bg-zinc-800 rounded-xl animate-pulse" />))}</div>;
+
+  return (
+    <motion.div initial="hidden" animate="visible" className="space-y-6">
+      <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">Results</h1>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: 'Total Quizzes', value: results.length, icon: Exam, tint: 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' },
+          { label: 'Average Score', value: `${avgScore}%`, icon: TrendUp, tint: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20' },
+          { label: 'Pass Rate', value: `${passRate}%`, icon: Trophy, tint: 'text-violet-600 bg-violet-50 dark:bg-violet-900/20' },
+          { label: 'Passed', value: results.filter((r) => r.passed).length, icon: Check, tint: 'text-green-600 bg-green-50 dark:bg-green-900/20' },
+        ].map((stat) => {
+          const Icon = stat.icon;
+          return (
+            <Card key={stat.label} className="border-zinc-200 dark:border-zinc-800">
+              <CardContent className="p-5 flex items-center gap-4">
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${stat.tint}`}><Icon size={20} /></div>
+                <div><p className="text-2xl font-bold text-zinc-900 dark:text-white">{stat.value}</p><p className="text-xs text-zinc-500">{stat.label}</p></div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+      {results.length === 0 ? (
+        <Card className="border-dashed border-zinc-300 dark:border-zinc-700"><CardContent className="p-10 text-center">
+          <TrendUp size={48} className="mx-auto text-zinc-300 mb-4" />
+          <h3 className="font-semibold text-zinc-900 dark:text-white mb-1">No results yet</h3>
+          <p className="text-sm text-zinc-500">Complete quizzes to see your performance analytics.</p>
+        </CardContent></Card>
+      ) : (
+        <div className="space-y-3">
+          {results.map((r) => (
+            <Card key={r.id} className="border-zinc-200 dark:border-zinc-800">
+              <CardContent className="p-4 flex items-center gap-4">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${r.passed ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30' : 'bg-red-100 text-red-600 dark:bg-red-900/30'}`}>
+                  {r.passed ? <Check size={20} weight="bold" /> : <XCircle size={20} weight="bold" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-medium text-sm text-zinc-900 dark:text-white">{r.lesson_title}</h3>
+                  <p className="text-xs text-zinc-500">{r.score}/{r.total_questions}</p>
+                </div>
+                <span className="text-sm font-bold text-zinc-900 dark:text-white">{r.score !== null && r.total_questions ? Math.round((r.score / r.total_questions) * 100) : 0}%</span>
+                <span className="text-xs text-zinc-400 shrink-0">{r.created_at ? new Date(r.created_at).toLocaleDateString() : ''}</span>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+/* ─── Certificates Page ─── */
+export function StudentCertificatesPage() {
+  const [certs, setCerts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { setLoading(false); return; }
+        const { data } = await supabase.from('certificates').select('*').eq('user_id', user.id).order('issued_at', { ascending: false });
+        if (data) setCerts(data as any[]);
+      } catch (err: any) { toast.error(err.message || 'Failed to load certificates'); }
+      finally { setLoading(false); }
     }
-  };
+    load();
+  }, []);
 
-  const handleLoadedMetadata = () => {
-    if (videoRef.current) {
-      setDuration(videoRef.current.duration);
+  if (loading) return <div className="space-y-4">{[0, 1, 2].map((i) => (<div key={i} className="h-48 bg-zinc-100 dark:bg-zinc-800 rounded-xl animate-pulse" />))}</div>;
+
+  return (
+    <motion.div initial="hidden" animate="visible" className="space-y-6">
+      <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">Certificates</h1>
+      {certs.length === 0 ? (
+        <Card className="border-dashed border-zinc-300 dark:border-zinc-700"><CardContent className="p-10 text-center">
+          <Certificate size={48} className="mx-auto text-zinc-300 mb-4" />
+          <h3 className="font-semibold text-zinc-900 dark:text-white mb-1">No certificates yet</h3>
+          <p className="text-sm text-zinc-500">Complete all courses to earn your certificates.</p>
+        </CardContent></Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {certs.map((cert) => (
+            <Card key={cert.id} className="border-zinc-200 dark:border-zinc-800">
+              <CardContent className="p-6 text-center">
+                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-emerald-100 to-amber-100 dark:from-emerald-900/30 dark:to-amber-900/30 flex items-center justify-center mx-auto mb-4">
+                  <Certificate size={32} className="text-emerald-600" />
+                </div>
+                <h3 className="font-semibold text-zinc-900 dark:text-white mb-1">{cert.course_title || 'Course Certificate'}</h3>
+                <p className="text-xs text-zinc-500 mb-4">Issued {cert.issued_at ? new Date(cert.issued_at).toLocaleDateString() : 'N/A'}</p>
+                <Button size="sm" variant="outline" className="gap-2 text-emerald-600">
+                  <FilePdf size={14} /> Download PDF
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+/* ─── Notifications Page ─── */
+export function StudentNotificationsPage() {
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { setLoading(false); return; }
+        const { data } = await supabase.from('notifications').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50);
+        if (data) setNotifications(data as NotificationItem[]);
+      } catch (err: any) { toast.error(err.message || 'Failed to load notifications'); }
+      finally { setLoading(false); }
     }
-  };
+    load();
+  }, []);
 
-  const handleVideoEnded = async () => {
-    setIsPlaying(false);
-    await markLessonComplete();
-  };
-
-  // Mark lesson complete
-  const markLessonComplete = async () => {
-    if (!currentLesson) return;
+  const markAllRead = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-
-      await supabase
-        .from('lesson_progress')
-        .upsert({
-          user_id: user.id,
-          lesson_id: currentLesson.id,
-          completed: true,
-          completed_at: new Date().toISOString(),
-          time_spent_seconds: Math.floor(duration),
-          last_position_seconds: 0,
-        }, { onConflict: 'user_id,lesson_id' });
-
-      setLessonProgress(prev => prev ? { ...prev, completed: true, completed_at: new Date().toISOString() } : null);
-      toast.success('Lesson marked as complete!');
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to save progress');
-    }
+      await supabase.from('notifications').update({ read: true }).eq('user_id', user.id);
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      toast.success('All marked as read');
+    } catch (err: any) { toast.error(err.message || 'Failed to update'); }
   };
 
-  // Navigate lessons
-  const currentIndex = allLessons.findIndex(l => l.id === currentLesson?.id);
-  const nextLesson = allLessons[currentIndex + 1];
-  const prevLesson = allLessons[currentIndex - 1];
-
-  const goToLesson = (lesson: LessonRow) => {
-    setCurrentLesson(lesson);
-    setVideoSrc('');
-    setIsPlaying(false);
-    setCurrentTime(0);
-    setShowResources(false);
-  };
-
-  // Format time
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  // Download resource
-  const downloadResource = async (resource: any) => {
-    if (!resource.storage_path) return;
-    setDownloadingResource(resource.id);
-    try {
-      const url = await getSignedUrl('lesson-resources', resource.storage_path, 3600);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = resource.title || 'resource';
-      a.click();
-    } catch (err: any) {
-      toast.error(err.message || 'Download failed');
-    }
-    setDownloadingResource(null);
-  };
-
-  if (loading) {
-    return (
-      <motion.div initial="hidden" animate="visible" variants={containerVariants} className="space-y-6">
-        <div className="animate-pulse space-y-4">
-          <div className="aspect-video bg-zinc-200 dark:bg-zinc-800 rounded-xl" />
-          <div className="h-6 w-64 bg-zinc-200 dark:bg-zinc-800 rounded" />
-          <div className="h-4 w-full bg-zinc-200 dark:bg-zinc-800 rounded" />
-        </div>
-      </motion.div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="text-center py-16">
-        <Lock size={48} className="mx-auto text-zinc-300 mb-4" />
-        <h2 className="text-lg font-semibold mb-2 text-zinc-900 dark:text-white">Access Required</h2>
-        <p className="text-sm text-zinc-500 mb-4">{error}</p>
-        {courseId && (
-          <Link to={`/checkout/${courseId}`}>
-            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
-              Enroll Now <ArrowRight size={16} />
-            </Button>
-          </Link>
-        )}
-      </div>
-    );
-  }
-
-  if (!course || !currentLesson) {
-    return (
-      <div className="text-center py-16">
-        <BookOpen size={48} className="mx-auto text-zinc-300 mb-4" />
-        <h2 className="text-lg font-semibold mb-2 text-zinc-900 dark:text-white">Lesson not found</h2>
-        <Link to={ROUTES.studentCourses}><Button variant="outline" className="gap-2"><ArrowLeft size={16} /> Back to Courses</Button></Link>
-      </div>
-    );
-  }
+  if (loading) return <div className="space-y-4">{[0, 1, 2, 3].map((i) => (<div key={i} className="h-16 bg-zinc-100 dark:bg-zinc-800 rounded-xl animate-pulse" />))}</div>;
 
   return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-      {/* Breadcrumb */}
-      <Link to={ROUTES.studentCourses} className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-emerald-600 mb-4 transition-colors">
-        <ArrowLeft size={14} /> Back to My Courses
-      </Link>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Content */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Video Player */}
-          {currentLesson.type === 'video' && (
-            <div className="aspect-video rounded-xl bg-zinc-900 overflow-hidden relative">
-              {videoSrc ? (
-                <video
-                  ref={videoRef}
-                  src={videoSrc}
-                  className="w-full h-full object-contain"
-                  onPlay={() => setIsPlaying(true)}
-                  onPause={() => setIsPlaying(false)}
-                  onTimeUpdate={handleTimeUpdate}
-                  onLoadedMetadata={handleLoadedMetadata}
-                  onEnded={handleVideoEnded}
-                  onClick={handlePlayPause}
-                  controls={!isPlaying}
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center">
-                  <Spinner size={48} className="animate-spin text-zinc-500" />
-                </div>
-              )}
-              {!videoSrc && currentLesson.video_url && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                  <button onClick={handlePlayPause} className="w-16 h-16 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center hover:bg-white/30 transition-colors">
-                    <PlayCircle size={32} className="text-white" weight="fill" />
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Reading / Text Content */}
-          {(currentLesson.type === 'reading' || currentLesson.type === 'quiz' || currentLesson.type === 'assignment') && (
-            <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 p-6 bg-white dark:bg-zinc-900">
-              <div className="prose prose-sm dark:prose-invert max-w-none">
-                <p className="text-zinc-600 dark:text-zinc-300 leading-relaxed">
-                  {currentLesson.content || 'Content for this lesson will appear here.'}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Lesson Info */}
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <Badge variant="secondary" className="capitalize">{currentLesson.type}</Badge>
-              {currentLesson.is_free_preview && (
-                <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border-0 text-xs">Free Preview</Badge>
-              )}
-              {lessonProgress?.completed && (
-                <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border-0 text-xs flex items-center gap-1">
-                  <Check size={10} weight="bold" /> Completed
-                </Badge>
-              )}
-            </div>
-            <h1 className="text-xl font-bold text-zinc-900 dark:text-white mb-2">{currentLesson.title}</h1>
-            {currentLesson.description && (
-              <p className="text-sm text-zinc-500 mb-4">{currentLesson.description}</p>
-            )}
-            <div className="flex items-center gap-3 text-sm text-zinc-500 mb-6">
-              <span className="flex items-center gap-1"><Clock size={14} />{currentLesson.duration || 'N/A'}</span>
-              {lessonProgress?.time_spent_seconds && (
-                <span className="flex items-center gap-1"><Clock size={14} />{Math.floor(lessonProgress.time_spent_seconds / 60)}m spent</span>
-              )}
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex items-center gap-3 mb-6">
-              <Button
-                onClick={markLessonComplete}
-                disabled={!!lessonProgress?.completed}
-                className={`gap-2 ${lessonProgress?.completed ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
-              >
-                <Check size={16} weight="bold" />
-                {lessonProgress?.completed ? 'Completed' : 'Mark Complete'}
-              </Button>
-              <Button variant="outline" onClick={() => setShowResources(!showResources)} className="gap-2">
-                <ListDashes size={16} /> Resources
-              </Button>
-            </div>
-
-            {/* Resources Panel */}
-            <AnimatePresence>
-              {showResources && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ ease: 'easeOut' as const }}
-                  className="overflow-hidden"
-                >
-                  <Card className="border-zinc-200 dark:border-zinc-800">
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm">Lesson Resources</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      {resources.length === 0 ? (
-                        <p className="text-sm text-zinc-500">No resources available for this lesson.</p>
-                      ) : (
-                        <div className="space-y-2">
-                          {resources.map((res) => {
-                            const ResIcon = res.mime_type?.includes('pdf') ? FilePdf : res.mime_type?.includes('image') ? ImageIcon : FileText;
-                            return (
-                              <div key={res.id} className="flex items-center gap-3 p-3 rounded-lg bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
-                                <ResIcon size={20} className="text-emerald-600 shrink-0" />
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium text-zinc-900 dark:text-white truncate">{res.title}</p>
-                                  <p className="text-xs text-zinc-500">{res.mime_type?.split('/')[1]?.toUpperCase() || 'File'}</p>
-                                </div>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => downloadResource(res)}
-                                  disabled={downloadingResource === res.id}
-                                  className="gap-1 text-emerald-600"
-                                >
-                                  {downloadingResource === res.id ? (
-                                    <Spinner size={14} className="animate-spin" />
-                                  ) : (
-                                    <Download size={14} />
-                                  )}
-                                </Button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Navigation */}
-            <div className="mt-8 pt-6 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
-              {prevLesson ? (
-                <button
-                  onClick={() => goToLesson(prevLesson)}
-                  className="inline-flex items-center gap-2 text-sm font-medium text-zinc-600 hover:text-emerald-600 transition-colors"
-                >
-                  <ArrowLeft size={14} /> Previous: {prevLesson.title}
-                </button>
-              ) : <div />}
-              {nextLesson ? (
-                <button
-                  onClick={() => goToLesson(nextLesson)}
-                  className="inline-flex items-center gap-2 text-sm font-medium text-emerald-600 hover:text-emerald-700 transition-colors"
-                >
-                  Next: {nextLesson.title} <ArrowRight size={14} />
-                </button>
-              ) : (
-                <Link to={ROUTES.studentCourses}>
-                  <Button variant="outline" className="gap-2">
-                    <Trophy size={16} /> Finish Course
-                  </Button>
-                </Link>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Sidebar: Curriculum */}
-        <div className="lg:col-span-1">
-          <Card className="border-zinc-200 dark:border-zinc-800 sticky top-24">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm">{course.title}</CardTitle>
-              <CardDescription className="text-xs">
-                {modules.length} modules · {allLessons.length} lessons
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="divide-y divide-zinc-100 dark:divide-zinc-800 max-h-[calc(100dvh-12rem)] overflow-y-auto">
-                {modules.map((mod) => (
-                  <div key={mod.id} className="px-4 py-3">
-                    <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase mb-2">{mod.title}</p>
-                    <div className="space-y-1">
-                      {mod.lessons.map((l) => {
-                        const isActive = l.id === currentLesson?.id;
-                        const isCompleted = lessonProgress?.lesson_id === l.id && lessonProgress.completed;
-                        return (
-                          <button
-                            key={l.id}
-                            onClick={() => goToLesson(l)}
-                            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs transition-colors text-left ${
-                              isActive
-                                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400 font-medium'
-                                : 'text-zinc-600 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800'
-                            }`}
-                          >
-                            <span className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${
-                              isCompleted ? 'bg-emerald-100 text-emerald-600' : 'bg-zinc-100 dark:bg-zinc-800'
-                            }`}>
-                              {isCompleted ? <Check size={8} weight="bold" /> : <PlayCircle size={10} />}
-                            </span>
-                            <span className="flex-1 truncate">{l.title}</span>
-                            <span className="text-zinc-400 shrink-0">{l.duration}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+    <motion.div initial="hidden" animate="visible" className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">Notifications</h1>
+        <Button size="sm" variant="ghost" onClick={markAllRead} className="text-emerald-600 gap-1">Mark all read</Button>
       </div>
+      {notifications.length === 0 ? (
+        <Card className="border-dashed border-zinc-300 dark:border-zinc-700"><CardContent className="p-10 text-center">
+          <Bell size={48} className="mx-auto text-zinc-300 mb-4" />
+          <h3 className="font-semibold text-zinc-900 dark:text-white mb-1">No notifications</h3>
+          <p className="text-sm text-zinc-500">You're all caught up!</p>
+        </CardContent></Card>
+      ) : (
+        <div className="space-y-2">
+          {notifications.map((n) => (
+            <Card key={n.id} className={`border-zinc-200 dark:border-zinc-800 ${!n.read ? 'border-l-4 border-l-emerald-500' : ''}`}>
+              <CardContent className="p-4 flex items-start gap-3">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                  n.type === 'assignment' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30' :
+                  n.type === 'quiz' ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/30' :
+                  n.type === 'certificate' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30' :
+                  'bg-zinc-100 text-zinc-600 dark:bg-zinc-800'}`}>
+                  <Bell size={14} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-zinc-900 dark:text-white">{n.title}</p>
+                  <p className="text-xs text-zinc-500 mt-0.5">{n.message}</p>
+                </div>
+                <span className="text-xs text-zinc-400 shrink-0">{n.created_at ? new Date(n.created_at).toLocaleDateString() : ''}</span>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
     </motion.div>
   );
 }
+
+/* ─── Profile Page ─── */
+export function StudentProfilePage() {
+  const [profile, setProfile] = useState<UserProfile>({ full_name: null, avatar_url: null, bio: null, phone: null, email: null });
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState(profile);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+        if (data) setProfile(data as UserProfile);
+      } catch (err: any) { toast.error(err.message || 'Failed to load profile'); }
+    }
+    load();
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      await supabase.from('profiles').upsert({ id: user.id, ...form }, { onConflict: 'id' });
+      setProfile(form); setEditing(false);
+      toast.success('Profile updated');
+    } catch (err: any) { toast.error(err.message || 'Failed to save'); }
+    setSaving(false);
+  };
+
+  return (
+    <motion.div initial="hidden" animate="visible" className="space-y-6 max-w-2xl">
+      <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">Profile</h1>
+      <Card className="border-zinc-200 dark:border-zinc-800">
+        <CardContent className="p-6 space-y-6">
+          {/* Avatar */}
+          <div className="flex items-center gap-4">
+            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-400 to-blue-500 flex items-center justify-center text-white text-2xl font-bold shrink-0">
+              {(profile.full_name || profile.email || 'U')[0].toUpperCase()}
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-zinc-900 dark:text-white">{profile.full_name || 'Student'}</h2>
+              <p className="text-sm text-zinc-500">{profile.email}</p>
+            </div>
+          </div>
+
+          {/* Fields */}
+          <div className="space-y-4">
+            {[
+              { key: 'full_name' as const, label: 'Full Name', icon: UserCircle, type: 'text' },
+              { key: 'email' as const, label: 'Email', icon: Envelope, type: 'email' },
+              { key: 'phone' as const, label: 'Phone', icon: Phone, type: 'tel' },
+              { key: 'bio' as const, label: 'Bio', icon: ChatCenteredText, type: 'textarea' },
+            ].map(({ key, label, icon: Icon, type }) => (
+              <div key={key}>
+                <label className="text-xs font-medium text-zinc-500 mb-1 block flex items-center gap-1"><Icon size={12} />{label}</label>
+                {type === 'textarea' ? (
+                  editing ? <textarea value={form[key] || ''} onChange={(e) => setForm({ ...form, [key]: e.target.value })} rows={3} className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm text-zinc-900 dark:text-white resize-none" /> :
+                  <p className="text-sm text-zinc-900 dark:text-white">{profile[key] || 'Not set'}</p>
+                ) : (
+                  editing ? <Input type={type} value={form[key] || ''} onChange={(e) => setForm({ ...form, [key]: e.target.value })} className="border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm" /> :
+                  <p className="text-sm text-zinc-900 dark:text-white">{profile[key] || 'Not set'}</p>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            {editing ? (
+              <>
+                <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"><Check size={16} weight="bold" /> Save Changes</Button>
+                <Button variant="outline" onClick={() => { setEditing(false); setForm(profile); }}>Cancel</Button>
+              </>
+            ) : (
+              <Button variant="outline" onClick={() => setEditing(true)} className="gap-2"><Pencil size={16} /> Edit Profile</Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
+
+/* ─── Settings Page ─── */
+export function StudentSettingsPage() {
+  const [showPassword, setShowPassword] = useState(false);
+  const [currentPwd, setCurrentPwd] = useState('');
+  const [newPwd, setNewPwd] = useState('');
+  const [confirmPwd, setConfirmPwd] = useState('');
+  const [savingPwd, setSavingPwd] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => document.documentElement.classList.contains('dark'));
+
+  const toggleDark = () => {
+    const next = !document.documentElement.classList.contains('dark');
+    document.documentElement.classList.toggle('dark', next);
+    setDarkMode(next);
+  };
+
+  const handleChangePassword = async () => {
+    if (newPwd !== confirmPwd) { toast.error('Passwords do not match'); return; }
+    if (newPwd.length < 6) { toast.error('Password must be at least 6 characters'); return; }
+    setSavingPwd(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPwd });
+      if (error) throw error;
+      toast.success('Password updated successfully');
+      setCurrentPwd(''); setNewPwd(''); setConfirmPwd('');
+    } catch (err: any) { toast.error(err.message || 'Failed to update password'); }
+    setSavingPwd(false);
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    window.location.href = ROUTES.home;
+  };
+
+  return (
+    <motion.div initial="hidden" animate="visible" className="space-y-6 max-w-2xl">
+      <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">Settings</h1>
+
+      {/* Appearance */}
+      <Card className="border-zinc-200 dark:border-zinc-800">
+        <CardHeader className="pb-3"><CardTitle className="text-sm flex items-center gap-2"><ShieldCheck size={16} className="text-emerald-600" />Appearance</CardTitle></CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div><p className="text-sm font-medium text-zinc-900 dark:text-white">Dark Mode</p><p className="text-xs text-zinc-500">Toggle between light and dark themes</p></div>
+            <button onClick={toggleDark} className={`w-12 h-6 rounded-full transition-colors relative ${darkMode ? 'bg-emerald-600' : 'bg-zinc-300'}`}>
+              <div className={`w-5 h-5 rounded-full bg-white shadow absolute top-0.5 transition-transform ${darkMode ? 'translate-x-6' : 'translate-x-0.5'}`} />
+            </button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Password */}
+      <Card className="border-zinc-200 dark:border-zinc-800">
+        <CardHeader className="pb-3"><CardTitle className="text-sm flex items-center gap-2"><Key size={16} className="text-amber-600" />Security</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <label className="text-xs font-medium text-zinc-500 mb-1 block">Current Password</label>
+            <div className="relative">
+              <Input type={showPassword ? 'text' : 'password'} value={currentPwd} onChange={(e) => setCurrentPwd(e.target.value)} placeholder="Enter current password" className="pr-10 border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm" />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600">
+                {showPassword ? <EyeSlash size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-zinc-500 mb-1 block">New Password</label>
+            <Input type="password" value={newPwd} onChange={(e) => setNewPwd(e.target.value)} placeholder="Enter new password" className="border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-zinc-500 mb-1 block">Confirm New Password</label>
+            <Input type="password" value={confirmPwd} onChange={(e) => setConfirmPwd(e.target.value)} placeholder="Confirm new password" className="border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm" />
+          </div>
+          <Button onClick={handleChangePassword} disabled={savingPwd} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"><Key size={16} weight="bold" /> Update Password</Button>
+        </CardContent>
+      </Card>
+
+      {/* Danger Zone */}
+      <Card className="border-red-200 dark:border-red-900/50">
+        <CardHeader className="pb-3"><CardTitle className="text-sm text-red-600">Danger Zone</CardTitle></CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div><p className="text-sm font-medium text-zinc-900 dark:text-white">Sign Out</p><p className="text-xs text-zinc-500">Log out of your account on this device</p></div>
+            <Button variant="outline" onClick={handleLogout} className="text-red-600 border-red-200 hover:bg-red-50 dark:hover:bg-red-900/20 gap-2"><SignOut size={16} /> Sign Out</Button>
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
+
+// Re-export for backwards compatibility
+export { StudentDashboard } from './StudentDashboardPage';
