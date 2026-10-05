@@ -29,6 +29,7 @@ export const ROUTES = {
   studentSettings: '/student/settings',
   adminDashboard: '/admin/dashboard',
   adminStudents: '/admin/students',
+  adminIdentityVerification: '/admin/identity-verification',
   adminCourses: '/admin/courses',
   adminCourseNew: '/admin/courses/new',
   adminCourseEditor: '/admin/courses/:courseId',
@@ -58,6 +59,7 @@ export const studentNavItems: NavItem[] = [
 export const adminNavItems: NavItem[] = [
   { label: 'Dashboard', path: ROUTES.adminDashboard, icon: 'House' },
   { label: 'Students', path: ROUTES.adminStudents, icon: 'Users' },
+  { label: 'Identity Verification', path: ROUTES.adminIdentityVerification, icon: 'ShieldCheck' },
   { label: 'Courses', path: ROUTES.adminCourses, icon: 'BookOpen' },
   { label: 'Payments', path: ROUTES.adminPayments, icon: 'Wallet' },
   { label: 'Reports', path: ROUTES.adminReports, icon: 'ChartLine' },

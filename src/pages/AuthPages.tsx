@@ -32,8 +32,14 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       await signIn(email, password);
-      // Navigate based on profile role after auth state updates
-      const redirectTo = profile?.role === 'admin' ? ROUTES.adminDashboard : ROUTES.studentDashboard;
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: userProfile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('user_id', user?.id)
+        .maybeSingle();
+
+      const redirectTo = userProfile?.role === 'admin' || userProfile?.role === 'super_admin' ? ROUTES.adminDashboard : ROUTES.studentDashboard;
       navigate(redirectTo);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Invalid email or password');

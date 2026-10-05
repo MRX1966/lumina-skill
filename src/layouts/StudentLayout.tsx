@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { House, BookOpen, ClipboardText, Exam, Certificate, UserCircle, GearSix, SignOut, Bell, List, MagnifyingGlass, GraduationCap, DotsThreeVertical, TrendUp, BellRinging } from '@phosphor-icons/react';
+import { House, BookOpen, ClipboardText, Exam, Certificate, UserCircle, GearSix, SignOut, Bell, List, MagnifyingGlass, GraduationCap, DotsThreeVertical, TrendUp, BellRinging, NotePencil } from '@phosphor-icons/react';
 import { ROUTES, BRAND_NAME, studentNavItems } from '@/constants/navigation';
 import { MobileDrawer } from '@/components/MobileDrawer';
 import { useAuth } from '@/contexts/AuthContext';
@@ -23,6 +23,12 @@ export function StudentLayout() {
 
   return (
     <div className="min-h-[100dvh] flex bg-zinc-50 dark:bg-zinc-950">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[60] focus:rounded-lg focus:bg-white focus:px-4 focus:py-3 focus:text-zinc-900 focus:shadow-lg"
+      >
+        Skip to content
+      </a>
       <aside className={`hidden lg:flex flex-col border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 transition-all duration-300 ${sidebarCollapsed ? 'w-16' : 'w-64'}`}>
         <div className="flex items-center justify-between h-16 px-4 border-b border-zinc-200 dark:border-zinc-800">
           <Link to={ROUTES.studentDashboard} className={`flex items-center gap-2 font-bold text-emerald-600 ${sidebarCollapsed ? 'justify-center w-full' : ''}`}>
@@ -77,7 +83,13 @@ export function StudentLayout() {
       <div className="flex-1 flex flex-col min-w-0">
         <header className="sticky top-0 z-20 h-16 border-b border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-lg flex items-center justify-between px-4 lg:px-6">
           <div className="flex items-center gap-3">
-            <button onClick={() => setMobileOpen(true)} className="lg:hidden p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800">
+            <button
+              type="button"
+              aria-label="Open student navigation"
+              aria-expanded={mobileOpen}
+              onClick={() => setMobileOpen(true)}
+              className="lg:hidden min-h-11 min-w-11 p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            >
               <List size={20} />
             </button>
             <div className="relative hidden sm:block">
@@ -95,10 +107,38 @@ export function StudentLayout() {
             </Link>
           </div>
         </header>
-        <main className="flex-1 p-4 lg:p-6 overflow-auto">
+        <main id="main-content" tabIndex={-1} className="flex-1 p-4 pb-24 lg:p-6 overflow-auto focus-visible:outline-none">
           <Outlet />
         </main>
       </div>
+      <nav
+        aria-label="Student quick navigation"
+        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-zinc-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-lg dark:border-zinc-800 dark:bg-zinc-950/95 lg:hidden"
+      >
+        {[
+          { to: ROUTES.studentDashboard, label: 'Home', icon: House },
+          { to: ROUTES.studentCourses, label: 'Courses', icon: BookOpen },
+          { to: ROUTES.studentAssignments, label: 'Tasks', icon: NotePencil },
+          { to: ROUTES.studentProfile, label: 'Profile', icon: UserCircle },
+        ].map(({ to, label, icon: Icon }) => {
+          const active = location.pathname === to || location.pathname.startsWith(`${to}/`);
+          return (
+            <Link
+              key={to}
+              to={to}
+              aria-current={active ? 'page' : undefined}
+              className={`flex min-h-16 flex-col items-center justify-center gap-1 px-1 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 ${
+                active
+                  ? 'text-emerald-700 dark:text-emerald-400'
+                  : 'text-zinc-500 dark:text-zinc-400'
+              }`}
+            >
+              <Icon size={21} weight={active ? 'fill' : 'regular'} />
+              <span>{label}</span>
+            </Link>
+          );
+        })}
+      </nav>
     </div>
   );
 }

@@ -38,9 +38,48 @@ async function fetchProfile(userId: string): Promise<UserProfile | null> {
       .from('profiles')
       .select('*')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
     if (error && error.code !== 'PGRST116') throw error;
     return data as unknown as UserProfile | null;
+  } catch {
+    return null;
+  }
+}
+
+async function ensureProfileForUser(user: User | null | undefined): Promise<UserProfile | null> {
+  if (!user) return null;
+
+  const existingProfile = await fetchProfile(user.id);
+  if (existingProfile) return existingProfile;
+
+  const fullName = (typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name)
+    ? user.user_metadata.full_name
+    : (typeof user.user_metadata?.name === 'string' && user.user_metadata.name)
+      ? user.user_metadata.name
+      : '';
+
+  const role = typeof user.user_metadata?.role === 'string' && user.user_metadata.role
+    ? user.user_metadata.role
+    : 'student';
+
+  const email = user.email ?? '';
+
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .upsert({
+        user_id: user.id,
+        email,
+        full_name: fullName,
+        username: email ? email.split('@')[0] : null,
+        role,
+        status: 'active',
+      }, { onConflict: 'user_id' })
+      .select()
+      .maybeSingle();
+
+    if (error && error.code !== '23505') throw error;
+    return (data ?? null) as unknown as UserProfile | null;
   } catch {
     return null;
   }
@@ -57,7 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(null);
       return;
     }
-    const p = await fetchProfile(user.id);
+    const p = await ensureProfileForUser(user);
     setProfile(p);
   }, [user]);
 
@@ -69,7 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const u = session?.user ?? null;
       setUser(u);
       if (u) {
-        fetchProfile(u.id).then((p) => {
+        ensureProfileForUser(u).then((p) => {
           if (mounted) setProfile(p);
         });
       }
@@ -82,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const u = session?.user ?? null;
       setUser(u);
       if (u) {
-        fetchProfile(u.id).then((p) => {
+        ensureProfileForUser(u).then((p) => {
           if (mounted) setProfile(p);
         });
       } else {
@@ -99,10 +138,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       toast.error(error.message);
       throw error;
+    }
+
+    const signedInUser = data.user;
+    if (signedInUser) {
+      const profileData = await ensureProfileForUser(signedInUser);
+      setUser(signedInUser);
+      setProfile(profileData);
     }
   }, []);
 
@@ -116,19 +162,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       toast.error(error.message);
       throw error;
     }
-    // Attempt to create profile record
     if (data.user) {
-      try {
-        await supabase.from('profiles').insert({
-          user_id: data.user.id,
-          email,
-          full_name: fullName,
-          username: email.split('@')[0],
-          role: 'student' as any,
-          status: 'active' as any,
-        });
-      } catch {
-        // Profile table might not exist yet; that's ok
+      const profileData = await ensureProfileForUser(data.user);
+      if (profileData) {
+        setUser(data.user);
+        setProfile(profileData);
       }
     }
   }, []);

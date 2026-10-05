@@ -46,6 +46,12 @@ A modern React starter template built with Vite, TypeScript, Tailwind CSS, and s
    npm run preview
    ```
 
+## Student identity verification
+
+The Profile page includes Ghana Card verification with administrator review. Before enabling it in a Supabase environment, apply `supabase/migrations/20261005_student_identity_verification.sql`. The migration creates the verification table, private document bucket, and row/storage access policies. Students can see only their own request; authorized admins can review submissions at `/admin/identity-verification`.
+
+Identity documents and card numbers are sensitive personal data. Configure appropriate access, retention, and privacy notices for your organization before collecting real student submissions. This workflow is manual review only; it does not validate Ghana Card details against a government identity service.
+
 ## 📁 Project Structure
 
 ```

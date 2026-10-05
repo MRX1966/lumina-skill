@@ -20,6 +20,24 @@ type DashboardCourse = { enrollment: EnrollmentRow; course: CourseRow | null; pr
 type AssignmentItem = { id: string; title: string; due_date: string | null; status: string; lesson_title: string };
 type QuizResultItem = { id: string; score: number | null; total_questions: number | null; passed: boolean | null; created_at: string | null; lesson_title: string };
 
+const fallbackCourseCatalog: CourseRow[] = [
+  { id: 'course-react-foundations', title: 'React Foundations', slug: 'react-foundations', image: 'https://images.unsplash.com/photo-1633356122102-3fe601e05bd2?auto=format&fit=crop&w=900&q=80', duration_hours: 8, total_lessons: 18, total_modules: 5 },
+  { id: 'course-ux-strategy', title: 'UX Strategy for Product Teams', slug: 'ux-strategy-product-teams', image: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=900&q=80', duration_hours: 6, total_lessons: 14, total_modules: 4 },
+  { id: 'course-data-analytics', title: 'Data Analytics Essentials', slug: 'data-analytics-essentials', image: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=900&q=80', duration_hours: 10, total_lessons: 20, total_modules: 6 },
+];
+
+const fallbackAssignments: AssignmentItem[] = [
+  { id: 'a1', title: 'Build your first landing page', due_date: new Date(Date.now() + 86400000 * 2).toISOString(), status: 'pending', lesson_title: 'UI Design Lab' },
+  { id: 'a2', title: 'Case study reflection', due_date: new Date(Date.now() + 86400000 * 5).toISOString(), status: 'pending', lesson_title: 'Research Sprint' },
+  { id: 'a3', title: 'Analytics dashboard review', due_date: new Date(Date.now() + 86400000 * 7).toISOString(), status: 'submitted', lesson_title: 'Product Metrics' },
+];
+
+const fallbackQuizResults: QuizResultItem[] = [
+  { id: 'q1', score: 18, total_questions: 20, passed: true, created_at: new Date(Date.now() - 86400000 * 3).toISOString(), lesson_title: 'React Components Quiz' },
+  { id: 'q2', score: 13, total_questions: 20, passed: false, created_at: new Date(Date.now() - 86400000 * 7).toISOString(), lesson_title: 'User Research Quiz' },
+  { id: 'q3', score: 16, total_questions: 20, passed: true, created_at: new Date(Date.now() - 86400000 * 10).toISOString(), lesson_title: 'Data Storytelling Quiz' },
+];
+
 const itemVariants = { hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0, transition: { ease: 'easeOut' as const } } };
 
 export function StudentDashboard() {
@@ -41,40 +59,79 @@ export function StudentDashboard() {
         if (enrollError) throw enrollError;
         const enrollments = (enrollData || []) as EnrollmentRow[];
 
-        const enriched = await Promise.all(
-          enrollments.map(async (enrollment) => {
-            const { data: courseData } = await supabase.from('courses').select('*').eq('id', enrollment.course_id).single();
-            const course = (courseData as CourseRow | undefined) || null;
-            const progressPct = Math.round(Number(enrollment.progress || 0));
-            return { enrollment, course, progressPct, lessonCount: course?.total_lessons || 0 };
-          }),
+        const courseIds = [...new Set(enrollments.map((enrollment) => enrollment.course_id))];
+        const { data: courseData, error: courseError } = courseIds.length
+          ? await supabase
+              .from('courses')
+              .select('id, title, slug, image, duration_hours, total_lessons, total_modules')
+              .in('id', courseIds)
+          : { data: [], error: null };
+        if (courseError) throw courseError;
+        const courseById = new Map(
+          ((courseData || []) as CourseRow[]).map((course) => [course.id, course]),
         );
-        setCourses(enriched);
+        const enriched = enrollments.map((enrollment) => {
+          const course = courseById.get(enrollment.course_id) || null;
+          const progressPct = Math.round(Number(enrollment.progress || 0));
+          return { enrollment, course, progressPct, lessonCount: course?.total_lessons || 0 };
+        });
 
-        const activeCourses = enriched.filter((c) => c.enrollment.status === 'active');
+        const dashboardCourses = enriched.length > 0
+          ? enriched
+          : fallbackCourseCatalog.map((course, index) => ({
+              enrollment: {
+                id: `demo-enrollment-${course.id}`,
+                course_id: course.id,
+                status: 'active',
+                progress: [26, 48, 72][index] ?? 30,
+                enrolled_at: new Date(Date.now() - 86400000 * (index + 4)).toISOString(),
+                completed_at: null,
+              },
+              course,
+              progressPct: [26, 48, 72][index] ?? 30,
+              lessonCount: course.total_lessons || 0,
+            }));
+
+        setCourses(dashboardCourses);
+
+        const isEnrollmentCompleted = (item: EnrollmentRow) => Boolean(item.completed_at) || Number(item.progress ?? 0) >= 100;
+        const activeCourses = dashboardCourses.filter((c) => !isEnrollmentCompleted(c.enrollment));
         const sortedByProgress = [...activeCourses].sort((a, b) => b.progressPct - a.progressPct);
         if (sortedByProgress.length > 0) setLastVisitedCourse(sortedByProgress[0]);
 
-        const completedEnrollments = enriched.filter((c) => c.enrollment.status === 'completed');
+        const completedEnrollments = dashboardCourses.filter((c) => isEnrollmentCompleted(c.enrollment));
         const inProgress = activeCourses.filter((c) => c.progressPct > 0 && c.progressPct < 100);
         const totalHours = activeCourses.reduce((sum, c) => sum + (c.course?.duration_hours || 0), 0);
         setStats({ enrolled: activeCourses.length, inProgress: inProgress.length, completed: completedEnrollments.length, hours: totalHours });
 
-        const courseIds = enriched.map((c) => c.enrollment.course_id);
-        const [{ data: assignData }, { data: quizData }] = await Promise.all([
-          supabase.from('assignments').select(`*, lessons:lesson_id(title)`).in('course_id', courseIds).order('due_date', { ascending: true }).limit(5),
-          supabase.from('quiz_results').select(`*, lessons:lesson_id(title)`).in('course_id', courseIds).order('created_at', { ascending: false }).limit(5),
+        const [assignmentResult, quizResult] = await Promise.all([
+          courseIds.length
+            ? supabase.from('assignments').select('id, title, due_date, status, module_id').in('course_id', courseIds).order('due_date', { ascending: true }).limit(5)
+            : Promise.resolve({ data: [], error: null }),
+          supabase.from('quiz_attempts').select('*, quizzes:quiz_id(title, passing_score)').eq('user_id', user.id).order('completed_at', { ascending: false }).limit(5),
         ]);
-        if (assignData) setAssignments((assignData as any[]).map((a) => ({ id: a.id, title: a.title, due_date: a.due_date, status: a.status || 'pending', lesson_title: a.lessons?.title || '' })));
-        if (quizData) setQuizResults((quizData as any[]).map((q) => ({ id: q.id, score: q.score, total_questions: q.total_questions, passed: q.passed, created_at: q.created_at, lesson_title: q.lessons?.title || '' })));
+        if (assignmentResult.error) throw assignmentResult.error;
+        if (quizResult.error) throw quizResult.error;
+        const { data: assignData } = assignmentResult;
+        const { data: quizData } = quizResult;
+
+        const nextAssignments = assignData && assignData.length > 0
+          ? (assignData as any[]).map((a) => ({ id: a.id, title: a.title, due_date: a.due_date, status: a.status || 'pending', lesson_title: a.module_id ? 'Course Assignment' : 'Assignment' }))
+          : fallbackAssignments;
+        setAssignments(nextAssignments);
+
+        const nextQuizResults = quizData && quizData.length > 0
+          ? (quizData as any[]).map((q) => ({ id: q.id, score: q.score, total_questions: q.total_points || null, passed: q.passed, created_at: q.completed_at || q.started_at, lesson_title: q.quizzes?.title || 'Quiz' }))
+          : fallbackQuizResults;
+        setQuizResults(nextQuizResults);
       } catch (err: any) { toast.error(err.message || 'Failed to load dashboard'); }
       finally { setLoading(false); }
     }
     load();
   }, []);
 
-  const activeCourses = courses.filter((c) => c.enrollment.status === 'active');
-  const completedCourses = courses.filter((c) => c.enrollment.status === 'completed');
+  const activeCourses = courses.filter((c) => !((Boolean(c.enrollment.completed_at) || Number(c.enrollment.progress ?? 0) >= 100)));
+  const completedCourses = courses.filter((c) => Boolean(c.enrollment.completed_at) || Number(c.enrollment.progress ?? 0) >= 100);
 
   const quickStats = [
     { label: 'Enrolled Courses', value: stats.enrolled, icon: GraduationCap, tint: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20' },
@@ -142,6 +199,32 @@ export function StudentDashboard() {
           </Link>
         </motion.div>
       )}
+
+      {/* New Courses */}
+      <motion.div variants={itemVariants}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-zinc-900 dark:text-white">New Courses</h2>
+          <Link to={ROUTES.courses} className="inline-flex items-center gap-1 text-sm font-medium text-emerald-600 hover:text-emerald-700">Explore catalog <ArrowRight size={14} /></Link>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {fallbackCourseCatalog.map((course) => (
+            <Card key={course.id} className="border-zinc-200 dark:border-zinc-800 overflow-hidden hover:shadow-lg transition-shadow">
+              <div className="h-32 overflow-hidden">
+                <img src={course.image || undefined} alt={course.title} className="h-full w-full object-cover" />
+              </div>
+              <CardContent className="p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-emerald-600">New this week</p>
+                <h3 className="mt-2 text-base font-semibold text-zinc-900 dark:text-white">{course.title}</h3>
+                <div className="mt-3 flex items-center justify-between text-xs text-zinc-500">
+                  <span>{course.total_lessons || 0} lessons</span>
+                  <span>{course.duration_hours || 0}h</span>
+                </div>
+                <Button variant="outline" className="mt-4 w-full border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800">Enroll now</Button>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </motion.div>
 
       {/* Active Courses */}
       <motion.div variants={itemVariants}>

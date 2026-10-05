@@ -32,7 +32,7 @@ export interface VerifyPaymentResult {
 
 // ─────────── Paystack Gateway ──────────────────────────────────────────────
 const PAYSTACK_PUBLIC_KEY = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || '';
-const PAYSTACK_BASE_URL = 'https://api.paystack.co';
+const PAYMENT_BACKEND_URL = import.meta.env.VITE_PAYMENT_BACKEND_URL || '';
 
 export class PaystackGateway implements PaymentGateway {
   name = 'paystack';
@@ -45,25 +45,30 @@ export class PaystackGateway implements PaymentGateway {
     userId,
     metadata,
   }: InitializePaymentParams): Promise<InitializePaymentResult> {
+    if (!PAYMENT_BACKEND_URL) {
+      throw new Error('Direct Paystack checkout is disabled in the browser. Configure a payment backend endpoint via VITE_PAYMENT_BACKEND_URL.');
+    }
+
     const reference = `PAY_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
     try {
-      const res = await fetch(`${PAYSTACK_BASE_URL}/transaction/initialize`, {
+      const res = await fetch(`${PAYMENT_BACKEND_URL}/api/payments/init`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${import.meta.env.VITE_PAYSTACK_SECRET_KEY || ''}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          email,
-          amount: amount * 100, // Paystack expects kobo/cedis in smallest unit
+          amount,
           currency,
-          reference,
+          email,
+          courseId,
+          userId,
           metadata: {
             course_id: courseId,
             user_id: userId,
             ...metadata,
           },
+          reference,
         }),
       });
 
@@ -74,9 +79,9 @@ export class PaystackGateway implements PaymentGateway {
 
       const data = await res.json();
       return {
-        checkoutUrl: data.data?.authorization_url,
+        checkoutUrl: data.data?.authorization_url ?? data.authorization_url,
         reference,
-        providerReference: data.data?.reference || reference,
+        providerReference: data.data?.reference || data.reference || reference,
       };
     } catch (err: any) {
       toast.error(err.message || 'Failed to initialize payment');
@@ -85,21 +90,21 @@ export class PaystackGateway implements PaymentGateway {
   }
 
   async verifyPayment(reference: string): Promise<VerifyPaymentResult> {
+    if (!PAYMENT_BACKEND_URL) {
+      throw new Error('Payment verification requires a backend endpoint. Configure VITE_PAYMENT_BACKEND_URL.');
+    }
+
     try {
-      const res = await fetch(`${PAYSTACK_BASE_URL}/transaction/verify/${reference}`, {
-        headers: {
-          Authorization: `Bearer ${import.meta.env.VITE_PAYSTACK_SECRET_KEY || ''}`,
-        },
-      });
+      const res = await fetch(`${PAYMENT_BACKEND_URL}/api/payments/verify?reference=${encodeURIComponent(reference)}`);
       if (!res.ok) throw new Error('Verification failed');
 
       const data = await res.json();
-      const status = data.data?.status;
+      const status = data.data?.status ?? data.status;
 
       return {
         status: status === 'success' ? 'successful' : status === 'failed' ? 'failed' : 'pending',
-        transactionId: data.data?.id?.toString(),
-        metadata: data.data?.metadata,
+        transactionId: data.data?.id?.toString() ?? data.id?.toString(),
+        metadata: data.data?.metadata ?? data.metadata,
       };
     } catch (err: any) {
       toast.error(err.message || 'Payment verification failed');
@@ -143,7 +148,7 @@ let _gateway: PaymentGateway | null = null;
 
 export function getGateway(): PaymentGateway {
   if (!_gateway) {
-    const useMock = !PAYSTACK_PUBLIC_KEY || import.meta.env.DEV;
+    const useMock = !PAYSTACK_PUBLIC_KEY || !PAYMENT_BACKEND_URL || import.meta.env.DEV;
     _gateway = useMock ? new MockGateway() : new PaystackGateway();
   }
   return _gateway;

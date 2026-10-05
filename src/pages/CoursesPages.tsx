@@ -1,13 +1,14 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useParams, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Star, Clock, PlayCircle, ArrowRight, BookOpen, User, CaretRight,
-  Check, ArrowLeft, Trophy, Certificate, MagnifyingGlass, Spinner
+  ArrowLeft, Trophy, Certificate, MagnifyingGlass
 } from '@phosphor-icons/react';
 import { ROUTES } from '@/constants/navigation';
-import { getPublishedCourses, getCourseBySlug, getCourseModulesWithLessons, getCategories } from '@/services/courseService';
+import { getPublishedCoursesPage, getCourseBySlug, getCourseModulesWithLessons, getCategories } from '@/services/courseService';
 import type { CourseWithRelations, ModuleWithLessons } from '@/services/courseService';
+import type { CategoryRow } from '@/integrations/supabase/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -85,56 +86,60 @@ function CourseCard({ course, index }: { course: CourseWithRelations; index: num
 
 export function CoursesPage() {
   const [courses, setCourses] = useState<CourseWithRelations[]>([]);
-  const [categories, setCategories] = useState<{ name: string; count: number }[]>([]);
+  const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalCourses, setTotalCourses] = useState(0);
+  const pageSize = 9;
   const location = useLocation();
   const queryParams = new URLSearchParams(location.search);
   const categoryParam = queryParams.get('category');
 
   useEffect(() => {
-    async function load() {
-      try {
-        const [allCourses, allCats] = await Promise.all([
-          getPublishedCourses(),
-          getCategories()
-        ]);
-        setCourses(allCourses);
-        setCategories([
-          { name: 'All', count: allCourses.length },
-          ...allCats.map(c => ({
-            name: c.name,
-            count: allCourses.filter(co => co.category_id === c.id).length
-          }))
-        ]);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load courses');
-      } finally {
+    getCategories()
+      .then(setCategories)
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : 'Failed to load categories');
         setLoading(false);
-      }
-    }
-    load();
+      });
   }, []);
 
   const activeCategory = categoryParam || selectedCategory;
+  const categoryId = categories.find((category) => category.name === activeCategory)?.id;
 
-  const filtered = useMemo(() => {
-    let result = courses;
-    if (activeCategory !== 'All') {
-      result = result.filter(c => c.category?.name === activeCategory);
-    }
-    if (search) {
-      const q = search.toLowerCase();
-      result = result.filter(c =>
-        c.title.toLowerCase().includes(q) ||
-        (c.subtitle || '').toLowerCase().includes(q) ||
-        (c.tags || []).some(t => t.toLowerCase().includes(q))
-      );
-    }
-    return result;
-  }, [courses, search, activeCategory]);
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    const timeout = window.setTimeout(() => {
+      getPublishedCoursesPage({ page, pageSize, search, categoryId })
+        .then(({ courses: pageCourses, total }) => {
+          if (!cancelled) {
+            setCourses(pageCourses);
+            setTotalCourses(total);
+          }
+        })
+        .catch((err: unknown) => {
+          if (!cancelled) {
+            setError(err instanceof Error ? err.message : 'Failed to load courses');
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }, search.trim() ? 250 : 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [page, pageSize, search, categoryId]);
+
+  const pageCount = Math.max(1, Math.ceil(totalCourses / pageSize));
 
   if (error) {
     return (
@@ -147,6 +152,11 @@ export function CoursesPage() {
     );
   }
 
+  const handleSearch = (value: string) => {
+    setSearch(value);
+    setPage(1);
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 lg:px-8 py-12 lg:py-16">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-10">
@@ -156,16 +166,24 @@ export function CoursesPage() {
 
       <div className="flex flex-col sm:flex-row gap-4 mb-8">
         <div className="relative flex-1">
-          <input type="text" placeholder="Search courses..." value={search} onChange={e => setSearch(e.target.value)} className="w-full h-10 pl-10 pr-4 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30" />
-          <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+          <label htmlFor="course-search" className="sr-only">Search courses by title</label>
+          <input id="course-search" type="search" placeholder="Search courses..." value={search} onChange={e => handleSearch(e.target.value)} className="w-full h-11 pl-10 pr-4 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30" />
+          <MagnifyingGlass aria-hidden="true" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
         </div>
       </div>
 
-      <Tabs value={activeCategory} onValueChange={setSelectedCategory} className="mb-8">
-        <TabsList className="flex-wrap h-auto gap-1 bg-transparent">
-          {categories.map(cat => (
-            <TabsTrigger key={cat.name} value={cat.name} className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900/20 dark:data-[state=active]:text-emerald-400 rounded-lg px-4 py-1.5 text-sm">
-              {cat.name} ({cat.count})
+      <Tabs
+        value={activeCategory}
+        onValueChange={(value) => {
+          setSelectedCategory(value);
+          setPage(1);
+        }}
+        className="mb-8"
+      >
+        <TabsList className="h-auto max-w-full flex-wrap gap-1 bg-transparent">
+          {[{ id: 'all', name: 'All' }, ...categories].map(cat => (
+            <TabsTrigger key={cat.id} value={cat.name} className="min-h-10 rounded-lg px-4 py-1.5 text-sm data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900/20 dark:data-[state=active]:text-emerald-400">
+              {cat.name}
             </TabsTrigger>
           ))}
         </TabsList>
@@ -184,9 +202,9 @@ export function CoursesPage() {
             </Card>
           ))}
         </div>
-      ) : filtered.length > 0 ? (
+      ) : courses.length > 0 ? (
         <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filtered.map((course, i) => (
+          {courses.map((course, i) => (
             <CourseCard key={course.id} course={course} index={i} />
           ))}
         </motion.div>
@@ -196,6 +214,34 @@ export function CoursesPage() {
           <h3 className="text-lg font-semibold text-zinc-900 dark:text-white mb-1">No courses found</h3>
           <p className="text-sm text-zinc-500">Try adjusting your search or filter criteria</p>
         </div>
+      )}
+      {!loading && totalCourses > 0 && (
+        <nav aria-label="Course results pages" className="mt-8 flex flex-col items-center justify-between gap-3 border-t border-zinc-200 pt-5 dark:border-zinc-800 sm:flex-row">
+          <p className="text-sm text-zinc-500" aria-live="polite">
+            Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalCourses)} of {totalCourses} courses
+          </p>
+          <div className="flex w-full gap-3 sm:w-auto">
+            <Button
+              variant="outline"
+              className="min-h-11 flex-1 sm:flex-none"
+              disabled={page <= 1}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+            >
+              Previous
+            </Button>
+            <span className="flex min-h-11 items-center px-2 text-sm text-zinc-600 dark:text-zinc-300" aria-label={`Page ${page} of ${pageCount}`}>
+              {page} / {pageCount}
+            </span>
+            <Button
+              variant="outline"
+              className="min-h-11 flex-1 sm:flex-none"
+              disabled={page >= pageCount}
+              onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
+            >
+              Next
+            </Button>
+          </div>
+        </nav>
       )}
     </div>
   );
@@ -213,6 +259,13 @@ export function CourseDetailPage() {
     async function load() {
       try {
         const c = await getCourseBySlug(slug);
+        if (!c) {
+          setCourse(null);
+          setModules([]);
+          setError('Course not found');
+          return;
+        }
+
         setCourse(c);
         const m = await getCourseModulesWithLessons(c.id);
         setModules(m);

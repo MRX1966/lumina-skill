@@ -9,6 +9,7 @@ export const STORAGE_BUCKETS = {
   'lesson-resources': { public: false, maxBytes: 52_428_800, mimeTypes: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/csv', 'application/zip', 'image/jpeg', 'image/png', 'image/webp'] },
   'assignment-submissions': { public: false, maxBytes: 52_428_800, mimeTypes: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/csv', 'application/zip', 'image/jpeg', 'image/png', 'image/webp'] },
   'certificates': { public: false, maxBytes: 10_000_000, mimeTypes: ['application/pdf', 'image/png', 'image/jpeg'] },
+  'identity-documents': { public: false, maxBytes: 5_000_000, mimeTypes: ['image/jpeg', 'image/png', 'image/webp'] },
   'profile-images': { public: true, maxBytes: 5_000_000, mimeTypes: ['image/jpeg', 'image/png', 'image/webp'] },
 } as const;
 

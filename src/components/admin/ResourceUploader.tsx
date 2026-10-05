@@ -19,6 +19,7 @@ const BUCKET_LABELS: Record<BucketName, string> = {
   'lesson-resources': 'Lesson Resource',
   'assignment-submissions': 'Assignment Submission',
   'certificates': 'Certificate',
+  'identity-documents': 'Identity Document',
   'profile-images': 'Profile Image',
 };
 

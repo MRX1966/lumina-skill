@@ -2,15 +2,15 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-  Plus, MagnifyingGlass, Funnel, CaretDown, DotsThreeVertical,
-  NotePencil, Copy, Eye, Check, X, Trash, Archive, ArrowLeft,
-  BookOpen, Users, Clock, CurrencyCircleDollar, Tag, XCircle,
+  Plus, MagnifyingGlass, CaretDown, DotsThreeVertical,
+  NotePencil, Copy, Check, X, Trash, Archive,
+  BookOpen, Users,
   FileText, Stack
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ROUTES } from '@/constants/navigation';
-import { getAdminCourses, getCourseCategories, getInstructors, deleteCourse, updateCourseStatus, duplicateCourse } from '@/services/courseService';
+import { getAdminCourses, getAdminCourseStats, getCourseCategories, getInstructors, deleteCourse, updateCourseStatus, duplicateCourse } from '@/services/courseService';
 import type { AdminCourseRow } from '@/services/courseService';
 import type { Tables } from '@/integrations/supabase/types';
 import { Badge } from '@/components/ui/badge';
@@ -75,37 +75,55 @@ export function AdminCourseList() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [deleteTarget, setDeleteTarget] = useState<AdminCourseRow | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalCourses, setTotalCourses] = useState(0);
+  const [stats, setStats] = useState({ totalCourses: 0, publishedCourses: 0, draftCourses: 0, totalEnrolled: 0 });
+  const pageSize = 20;
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [coursesData, categoriesData, instructorsData] = await Promise.all([
-        getAdminCourses(),
-        getCourseCategories(),
-        getInstructors(),
+      const [coursePage, courseStats] = await Promise.all([
+        getAdminCourses({
+          page,
+          pageSize,
+          search,
+          status: statusFilter,
+          categoryId: categoryFilter,
+        }),
+        getAdminCourseStats(),
       ]);
-      setCourses(coursesData || []);
-      setCategories(categoriesData || []);
-      setInstructors(instructorsData || []);
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to load courses');
+      setCourses(coursePage.courses);
+      setTotalCourses(coursePage.total);
+      setStats(courseStats);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load courses');
     } finally {
       setLoading(false);
     }
+  }, [categoryFilter, page, pageSize, search, statusFilter]);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([getCourseCategories(), getInstructors()])
+      .then(([categoryData, instructorData]) => {
+        if (!cancelled) {
+          setCategories(categoryData || []);
+          setInstructors(instructorData || []);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) toast.error(err instanceof Error ? err.message : 'Failed to load course filters');
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
-
-  const filtered = courses.filter((c) => {
-    const matchesSearch = !search || c.title?.toLowerCase().includes(search.toLowerCase()) || c.slug?.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || c.status === statusFilter;
-    const matchesCategory = categoryFilter === 'all' || c.category_id === categoryFilter;
-    return matchesSearch && matchesStatus && matchesCategory;
-  });
-
-  const totalEnrolled = courses.reduce((s, c) => s + (c.enrollment_count || 0), 0);
-  const publishedCount = courses.filter((c) => c.status === 'published').length;
-  const draftCount = courses.filter((c) => c.status === 'draft').length;
+  useEffect(() => {
+    const timeout = window.setTimeout(fetchData, search.trim() ? 250 : 0);
+    return () => window.clearTimeout(timeout);
+  }, [fetchData, search]);
 
   const handleStatusToggle = async (course: AdminCourseRow) => {
     try {
@@ -125,8 +143,8 @@ export function AdminCourseList() {
       await updateCourseStatus(course.id, newStatus as 'draft' | 'published');
       toast.success(`Course ${newStatus === 'published' ? 'published' : 'unpublished'}`);
       fetchData();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to update status');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update status');
     }
   };
 
@@ -136,8 +154,8 @@ export function AdminCourseList() {
       await updateCourseStatus(course.id, newStatus as 'draft' | 'published' | 'archived');
       toast.success(`Course ${newStatus === 'archived' ? 'archived' : 'restored'}`);
       fetchData();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to archive course');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to archive course');
     }
   };
 
@@ -146,8 +164,8 @@ export function AdminCourseList() {
       await duplicateCourse(course.id);
       toast.success('Course duplicated successfully');
       fetchData();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to duplicate course');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to duplicate course');
     }
   };
 
@@ -158,8 +176,8 @@ export function AdminCourseList() {
       toast.success('Course deleted');
       setDeleteTarget(null);
       fetchData();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to delete course');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete course');
     }
   };
 
@@ -179,7 +197,7 @@ export function AdminCourseList() {
       <motion.div variants={itemVariants} className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-zinc-900 dark:text-white">Courses</h1>
-          <p className="text-sm text-zinc-500 mt-1">{courses.length} total courses</p>
+          <p className="text-sm text-zinc-500 mt-1">{totalCourses} matching courses</p>
         </div>
         <Link to={ROUTES.adminCourseNew}>
           <Button className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
@@ -190,10 +208,10 @@ export function AdminCourseList() {
 
       {/* Stats */}
       <motion.div variants={itemVariants} className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard icon={BookOpen} label="Total Courses" value={courses.length} color="text-blue-600 bg-blue-50 dark:bg-blue-900/20" />
-        <StatCard icon={Check} label="Published" value={publishedCount} color="text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20" />
-        <StatCard icon={FileText} label="Drafts" value={draftCount} color="text-zinc-600 bg-zinc-50 dark:bg-zinc-800" />
-        <StatCard icon={Users} label="Enrolled Students" value={totalEnrolled} color="text-purple-600 bg-purple-50 dark:bg-purple-900/20" />
+        <StatCard icon={BookOpen} label="Total Courses" value={stats.totalCourses} color="text-blue-600 bg-blue-50 dark:bg-blue-900/20" />
+        <StatCard icon={Check} label="Published" value={stats.publishedCourses} color="text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20" />
+        <StatCard icon={FileText} label="Drafts" value={stats.draftCourses} color="text-zinc-600 bg-zinc-50 dark:bg-zinc-800" />
+        <StatCard icon={Users} label="Enrolled Students" value={stats.totalEnrolled} color="text-purple-600 bg-purple-50 dark:bg-purple-900/20" />
       </motion.div>
 
       {/* Filters */}
@@ -202,17 +220,19 @@ export function AdminCourseList() {
           <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
           <input
             type="text"
-            placeholder="Search courses by title or slug..."
+            aria-label="Search courses by title"
+            placeholder="Search courses by title..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full h-10 pl-9 pr-4 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            className="w-full h-11 pl-9 pr-4 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
           />
         </div>
         <div className="relative">
           <select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="h-10 pl-3 pr-8 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+            aria-label="Filter courses by status"
+            onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+            className="h-11 pl-3 pr-8 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
           >
             <option value="all">All Status</option>
             <option value="draft">Draft</option>
@@ -224,8 +244,9 @@ export function AdminCourseList() {
         <div className="relative">
           <select
             value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="h-10 pl-3 pr-8 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+            aria-label="Filter courses by category"
+            onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
+            className="h-11 pl-3 pr-8 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
           >
             <option value="all">All Categories</option>
             {categories.map((cat) => (
@@ -258,14 +279,14 @@ export function AdminCourseList() {
                   <tr>
                     <td colSpan={8} className="px-4 py-12 text-center text-zinc-400">Loading courses...</td>
                   </tr>
-                ) : filtered.length === 0 ? (
+                ) : courses.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="px-4 py-12 text-center">
                       <div className="flex flex-col items-center gap-2 text-zinc-400">
                         <BookOpen size={32} />
                         <p>No courses found</p>
                         {search || statusFilter !== 'all' || categoryFilter !== 'all' ? (
-                          <button onClick={() => { setSearch(''); setStatusFilter('all'); setCategoryFilter('all'); }} className="text-emerald-600 text-sm hover:underline">
+                          <button onClick={() => { setSearch(''); setStatusFilter('all'); setCategoryFilter('all'); setPage(1); }} className="text-emerald-600 text-sm hover:underline">
                             Clear filters
                           </button>
                         ) : (
@@ -274,7 +295,7 @@ export function AdminCourseList() {
                       </div>
                     </td>
                   </tr>
-                ) : filtered.map((course) => (
+                ) : courses.map((course) => (
                   <tr key={course.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
@@ -363,6 +384,25 @@ export function AdminCourseList() {
           </div>
         </Card>
       </motion.div>
+
+      {totalCourses > 0 && (
+        <nav aria-label="Admin course result pages" className="mt-4 flex flex-col items-center justify-between gap-3 sm:flex-row">
+          <p className="text-sm text-zinc-500" aria-live="polite">
+            Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalCourses)} of {totalCourses}
+          </p>
+          <div className="flex w-full gap-3 sm:w-auto">
+            <Button variant="outline" className="min-h-11 flex-1 sm:flex-none" disabled={page <= 1 || loading} onClick={() => setPage((current) => Math.max(1, current - 1))}>
+              Previous
+            </Button>
+            <span className="flex min-h-11 items-center px-2 text-sm text-zinc-600 dark:text-zinc-300" aria-label={`Page ${page} of ${Math.max(1, Math.ceil(totalCourses / pageSize))}`}>
+              {page} / {Math.max(1, Math.ceil(totalCourses / pageSize))}
+            </span>
+            <Button variant="outline" className="min-h-11 flex-1 sm:flex-none" disabled={page >= Math.ceil(totalCourses / pageSize) || loading} onClick={() => setPage((current) => current + 1)}>
+              Next
+            </Button>
+          </div>
+        </nav>
+      )}
 
       {/* Delete Confirmation */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>

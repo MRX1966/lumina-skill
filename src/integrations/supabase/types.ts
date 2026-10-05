@@ -12,9 +12,10 @@ export interface TestimonialRow { id: string; name: string; quote: string; avata
 export interface LessonProgressRow { id: string; user_id: string; lesson_id: string; completed: boolean | null; started_at: string | null; completed_at: string | null; time_spent_seconds: number | null; last_position_seconds: number | null; created_at: string; updated_at: string }
 export interface LessonResourceRow { id: string; lesson_id: string; title: string; type: string; url: string; bucket_name: string; storage_path: string | null; mime_type: string | null; size_bytes: number | null; sort_order: number | null; created_at: string }
 export interface PaymentRow { id: string; user_id: string; course_id: string; amount: number; currency: string; status: string; provider: string | null; provider_reference: string | null; transaction_reference: string | null; transaction_id: string | null; customer_email: string | null; gateway_response: Json | null; metadata: Json | null; method: string | null; paid_at: string | null; created_at: string; updated_at: string }
+export interface StudentIdentityVerificationRow { id: string; user_id: string; legal_name: string; date_of_birth: string; ghana_card_number: string; document_path: string; status: "pending" | "verified" | "rejected"; review_note: string | null; reviewed_by: string | null; submitted_at: string; reviewed_at: string | null }
 
 // ── Table map with Insert/Update variants ──
-type _R = { courses: CourseRow; modules: ModuleRow; lessons: LessonRow; enrollments: EnrollmentRow; profiles: ProfileRow; categories: CategoryRow; instructors: InstructorRow; testimonials: TestimonialRow; lesson_progress: LessonProgressRow; lesson_resources: LessonResourceRow; payments: PaymentRow }
+type _R = { courses: CourseRow; modules: ModuleRow; lessons: LessonRow; enrollments: EnrollmentRow; profiles: ProfileRow; categories: CategoryRow; instructors: InstructorRow; testimonials: TestimonialRow; lesson_progress: LessonProgressRow; lesson_resources: LessonResourceRow; payments: PaymentRow; student_identity_verifications: StudentIdentityVerificationRow }
 export type Tables<K extends keyof _R> = _R[K]
 export type TablesInsert<K extends keyof _R> = Partial<_R[K]>
 export type TablesUpdate<K extends keyof _R> = Partial<_R[K]>

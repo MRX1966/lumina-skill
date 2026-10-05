@@ -1,37 +1,41 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { MotionConfig } from 'framer-motion';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { PublicLayout } from '@/layouts/PublicLayout';
 import { StudentLayout } from '@/layouts/StudentLayout';
 import { AdminLayout } from '@/layouts/AdminLayout';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { HomePage } from '@/pages/HomePage';
-import { CoursesPage, CourseDetailPage } from '@/pages/CoursesPages';
-import { LoginPage, RegisterPage, ForgotPasswordPage } from '@/pages/AuthPages';
-import {
-  CheckoutPage,
-  PaymentSuccessPage,
-  PaymentFailedPage,
-  PaymentCancelledPage,
-} from '@/pages/PaymentPages';
-import { StudentDashboard, StudentCoursesPage } from '@/pages/StudentDashboardPage';
-import { StudentLessonPage } from '@/pages/StudentLessonPage';
-import {
-  StudentAssignmentsPage,
-  StudentQuizzesPage,
-  StudentResultsPage,
-  StudentCertificatesPage,
-  StudentNotificationsPage,
-  StudentProfilePage,
-  StudentSettingsPage,
-} from '@/pages/StudentPages';
-import {
-  AdminDashboard,
-  AdminStudentsPage,
-  AdminCoursesPage,
-  AdminCourseForm,
-} from '@/pages/AdminPages';
-import { CourseBuilderPage } from '@/pages/CourseBuilderPage';
 import { ROUTES } from '@/constants/navigation';
+
+const HomePage = lazy(() => import('@/pages/HomePage').then((module) => ({ default: module.HomePage })));
+const CoursesPage = lazy(() => import('@/pages/CoursesPages').then((module) => ({ default: module.CoursesPage })));
+const CourseDetailPage = lazy(() => import('@/pages/CoursesPages').then((module) => ({ default: module.CourseDetailPage })));
+const LoginPage = lazy(() => import('@/pages/AuthPages').then((module) => ({ default: module.LoginPage })));
+const RegisterPage = lazy(() => import('@/pages/AuthPages').then((module) => ({ default: module.RegisterPage })));
+const ForgotPasswordPage = lazy(() => import('@/pages/AuthPages').then((module) => ({ default: module.ForgotPasswordPage })));
+const CheckoutPage = lazy(() => import('@/pages/PaymentPages').then((module) => ({ default: module.CheckoutPage })));
+const PaymentSuccessPage = lazy(() => import('@/pages/PaymentPages').then((module) => ({ default: module.PaymentSuccessPage })));
+const PaymentFailedPage = lazy(() => import('@/pages/PaymentPages').then((module) => ({ default: module.PaymentFailedPage })));
+const PaymentCancelledPage = lazy(() => import('@/pages/PaymentPages').then((module) => ({ default: module.PaymentCancelledPage })));
+const StudentDashboard = lazy(() => import('@/pages/StudentDashboardPage').then((module) => ({ default: module.StudentDashboard })));
+const StudentCoursesPage = lazy(() => import('@/pages/StudentDashboardPage').then((module) => ({ default: module.StudentCoursesPage })));
+const StudentLessonPage = lazy(() => import('@/pages/StudentLessonPage').then((module) => ({ default: module.StudentLessonPage })));
+const StudentAssignmentsPage = lazy(() => import('@/pages/StudentPages').then((module) => ({ default: module.StudentAssignmentsPage })));
+const StudentQuizzesPage = lazy(() => import('@/pages/StudentPages').then((module) => ({ default: module.StudentQuizzesPage })));
+const StudentResultsPage = lazy(() => import('@/pages/StudentPages').then((module) => ({ default: module.StudentResultsPage })));
+const StudentCertificatesPage = lazy(() => import('@/pages/StudentPages').then((module) => ({ default: module.StudentCertificatesPage })));
+const StudentNotificationsPage = lazy(() => import('@/pages/StudentPages').then((module) => ({ default: module.StudentNotificationsPage })));
+const StudentProfilePage = lazy(() => import('@/pages/StudentPages').then((module) => ({ default: module.StudentProfilePage })));
+const StudentSettingsPage = lazy(() => import('@/pages/StudentPages').then((module) => ({ default: module.StudentSettingsPage })));
+const AdminDashboard = lazy(() => import('@/pages/AdminPages').then((module) => ({ default: module.AdminDashboard })));
+const AdminStudentsPage = lazy(() => import('@/pages/AdminPages').then((module) => ({ default: module.AdminStudentsPage })));
+const AdminIdentityVerificationPage = lazy(() => import('@/pages/IdentityVerificationPages').then((module) => ({ default: module.AdminIdentityVerificationPage })));
+const AdminCoursesPage = lazy(() => import('@/pages/AdminPages').then((module) => ({ default: module.AdminCoursesPage })));
+const AdminCourseForm = lazy(() => import('@/pages/AdminPages').then((module) => ({ default: module.AdminCourseForm })));
+const CourseBuilderPage = lazy(() => import('@/pages/CourseBuilderPage').then((module) => ({ default: module.CourseBuilderPage })));
+const AboutPage = lazy(() => import('@/components/StaticPages').then((module) => ({ default: module.AboutPage })));
+const ContactPage = lazy(() => import('@/components/StaticPages').then((module) => ({ default: module.ContactPage })));
 
 function NotFoundPage() {
   return (
@@ -48,11 +52,21 @@ function NotFoundPage() {
 function App() {
   return (
     <AuthProvider>
+      <MotionConfig reducedMotion="user">
       <BrowserRouter>
+        <Suspense
+          fallback={
+            <div className="flex min-h-[50vh] items-center justify-center text-sm text-slate-500" role="status">
+              Loading page…
+            </div>
+          }
+        >
         <Routes>
         {/* Public routes */}
         <Route element={<PublicLayout />}>
           <Route path={ROUTES.home} element={<HomePage />} />
+          <Route path={ROUTES.about} element={<AboutPage />} />
+          <Route path={ROUTES.contact} element={<ContactPage />} />
           <Route path={ROUTES.courses} element={<CoursesPage />} />
           <Route path={ROUTES.courseDetail} element={<CourseDetailPage />} />
           <Route path={ROUTES.login} element={<LoginPage />} />
@@ -87,6 +101,7 @@ function App() {
             <Route index element={<Navigate to={ROUTES.adminDashboard} replace />} />
             <Route path="dashboard" element={<AdminDashboard />} />
             <Route path="students" element={<AdminStudentsPage />} />
+            <Route path="identity-verification" element={<AdminIdentityVerificationPage />} />
             <Route path="courses" element={<AdminCoursesPage />} />
             <Route path="courses/new" element={<AdminCourseForm />} />
             <Route path="courses/:courseId" element={<AdminCourseForm />} />
@@ -98,7 +113,9 @@ function App() {
         <Route path={ROUTES.notFound} element={<NotFoundPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
+    </MotionConfig>
     </AuthProvider>
   );
 }

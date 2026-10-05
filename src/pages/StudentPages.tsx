@@ -1,22 +1,22 @@
-import { Link, useParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-  BookOpen, Clock, ArrowRight, PlayCircle, Check, ArrowLeft, Trophy,
-  Certificate, FilePdf, Download, ListDashes, Spinner, Lock,
-  ClipboardText, Exam, TrendUp, Bell, UserCircle, GearSix, Pencil,
+  BookOpen, Clock, ArrowRight, PlayCircle, Check, Trophy,
+  Certificate, FilePdf,
+  ClipboardText, Exam, TrendUp, Bell, UserCircle,
   Phone, Envelope, Key, Eye, EyeSlash, ChatCenteredText, ShieldCheck,
-  MagnifyingGlass, DotsThreeVertical, SignOut, XCircle,
+  SignOut, XCircle,
 } from '@phosphor-icons/react';
 import { ROUTES } from '@/constants/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { getSignedUrl } from '@/services/storageService';
 import { useState, useEffect } from 'react';
+import { IdentityVerificationPanel } from './IdentityVerificationPages';
 
 type EnrollmentRow = { id: string; course_id: string; status: string; progress: number | null; enrolled_at: string | null; completed_at: string | null };
 type CourseRow = { id: string; title: string; slug: string; image: string | null; duration_hours: number | null; total_lessons: number | null; total_modules: number | null };
@@ -38,14 +38,28 @@ export function StudentCoursesPage() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) { setLoading(false); return; }
-        const { data: enrollData } = await supabase.from('enrollments').select('*').eq('user_id', user.id).order('enrolled_at', { ascending: false });
+        const { data: enrollData, error: enrollError } = await supabase
+          .from('enrollments')
+          .select('id, course_id, status, progress, enrolled_at, completed_at')
+          .eq('user_id', user.id)
+          .order('enrolled_at', { ascending: false });
+        if (enrollError) throw enrollError;
         const enrollments = (enrollData || []) as EnrollmentRow[];
-        const enriched = await Promise.all(
-          enrollments.map(async (e) => {
-            const { data: c } = await supabase.from('courses').select('*').eq('id', e.course_id).single();
-            return { enrollment: e, course: (c as CourseRow | undefined) || null };
-          }),
+        const courseIds = [...new Set(enrollments.map((enrollment) => enrollment.course_id))];
+        const { data: courseData, error: courseError } = courseIds.length
+          ? await supabase
+              .from('courses')
+              .select('id, title, slug, image, duration_hours, total_lessons, total_modules')
+              .in('id', courseIds)
+          : { data: [], error: null };
+        if (courseError) throw courseError;
+        const courseById = new Map(
+          ((courseData || []) as CourseRow[]).map((course) => [course.id, course]),
         );
+        const enriched = enrollments.map((enrollment) => ({
+          enrollment,
+          course: courseById.get(enrollment.course_id) || null,
+        }));
         setCourses(enriched);
       } catch (err: any) { toast.error(err.message || 'Failed to load courses'); }
       finally { setLoading(false); }
@@ -53,7 +67,8 @@ export function StudentCoursesPage() {
     load();
   }, []);
 
-  const filtered = filter === 'all' ? courses : courses.filter((c) => c.enrollment.status === filter);
+  const isCompleted = (enrollment: EnrollmentRow) => Boolean(enrollment.completed_at) || Number(enrollment.progress ?? 0) >= 100;
+  const filtered = filter === 'all' ? courses : courses.filter((c) => (filter === 'completed' ? isCompleted(c.enrollment) : !isCompleted(c.enrollment)));
 
   if (loading) return <div className="space-y-4">{[0, 1, 2].map((i) => (<div key={i} className="h-32 bg-zinc-100 dark:bg-zinc-800 rounded-xl animate-pulse" />))}</div>;
 
@@ -75,13 +90,14 @@ export function StudentCoursesPage() {
             const { course, enrollment } = item;
             if (!course) return null;
             const pct = Math.round(Number(enrollment.progress || 0));
+            const completed = isCompleted(enrollment);
             return (
               <motion.div key={enrollment.id} variants={itemVariants}>
                 <Link to={`/student/courses/${course.id}/lessons`}>
                   <Card className="border-zinc-200 dark:border-zinc-800 h-full overflow-hidden hover:shadow-lg hover:shadow-emerald-900/5 transition-shadow cursor-pointer group">
                     <div className="aspect-video bg-zinc-100 dark:bg-zinc-800 relative overflow-hidden">
                       {course.image ? <img src={course.image} alt={course.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" /> : <PlayCircle size={40} className="absolute inset-0 m-auto text-zinc-300" />}
-                      <Badge className={`absolute top-3 right-3 ${enrollment.status === 'completed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'} border-0 text-xs`}>{enrollment.status}</Badge>
+                      <Badge className={`absolute top-3 right-3 ${completed ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'} border-0 text-xs`}>{completed ? 'Completed' : 'In Progress'}</Badge>
                     </div>
                     <CardContent className="p-4">
                       <h3 className="font-semibold text-sm text-zinc-900 dark:text-white line-clamp-2 mb-2">{course.title}</h3>
@@ -112,8 +128,8 @@ export function StudentAssignmentsPage() {
         const { data: enrollData } = await supabase.from('enrollments').select('course_id').eq('user_id', user.id);
         const courseIds = (enrollData || []).map((e: any) => e.course_id);
         if (courseIds.length === 0) { setLoading(false); return; }
-        const { data: assignData } = await supabase.from('assignments').select(`*, lessons:lesson_id(title)`).in('course_id', courseIds).order('due_date', { ascending: true });
-        if (assignData) setAssignments((assignData as any[]).map((a) => ({ ...a, lesson_title: a.lessons?.title || '' })));
+        const { data: assignData } = await supabase.from('assignments').select('*').in('course_id', courseIds).order('due_date', { ascending: true });
+        if (assignData) setAssignments((assignData as any[]).map((a) => ({ ...a, lesson_title: a.module_id ? 'Course Assignment' : 'Assignment' })));
       } catch (err: any) { toast.error(err.message || 'Failed to load assignments'); }
       finally { setLoading(false); }
     }
@@ -170,11 +186,16 @@ export function StudentQuizzesPage() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) { setLoading(false); return; }
-        const { data: enrollData } = await supabase.from('enrollments').select('course_id').eq('user_id', user.id);
-        const courseIds = (enrollData || []).map((e: any) => e.course_id);
-        if (courseIds.length === 0) { setLoading(false); return; }
-        const { data } = await supabase.from('quiz_results').select(`*, lessons:lesson_id(title), quizzes:quiz_id(title, passing_score)`).in('course_id', courseIds).order('created_at', { ascending: false });
-        if (data) setQuizzes(data as any[]);
+        const { data } = await supabase.from('quiz_attempts').select('*, quizzes:quiz_id(title, passing_score)').eq('user_id', user.id).order('completed_at', { ascending: false });
+        if (data) setQuizzes((data as any[]).map((q) => ({
+          ...q,
+          score: q.score,
+          total_questions: q.total_points,
+          passed: q.passed,
+          created_at: q.completed_at || q.started_at,
+          lessons: { title: q.quizzes?.title || 'Quiz' },
+          quizzes: q.quizzes,
+        })));
       } catch (err: any) { toast.error(err.message || 'Failed to load quizzes'); }
       finally { setLoading(false); }
     }
@@ -228,11 +249,15 @@ export function StudentResultsPage() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) { setLoading(false); return; }
-        const { data: enrollData } = await supabase.from('enrollments').select('course_id').eq('user_id', user.id);
-        const courseIds = (enrollData || []).map((e: any) => e.course_id);
-        if (courseIds.length === 0) { setLoading(false); return; }
-        const { data } = await supabase.from('quiz_results').select(`*, lessons:lesson_id(title)`).in('course_id', courseIds).order('created_at', { ascending: false });
-        if (data) setResults((data as any[]).map((r) => ({ ...r, lesson_title: r.lessons?.title || '' })));
+        const { data } = await supabase.from('quiz_attempts').select('*, quizzes:quiz_id(title, passing_score)').eq('user_id', user.id).order('completed_at', { ascending: false });
+        if (data) setResults((data as any[]).map((r) => ({
+          id: r.id,
+          score: r.score,
+          total_questions: r.total_points ?? null,
+          passed: r.passed,
+          created_at: r.completed_at || r.started_at,
+          lesson_title: r.quizzes?.title || 'Quiz',
+        })));
       } catch (err: any) { toast.error(err.message || 'Failed to load results'); }
       finally { setLoading(false); }
     }
@@ -425,8 +450,13 @@ export function StudentProfilePage() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
-        const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-        if (data) setProfile(data as UserProfile);
+        const { data, error } = await supabase.from('profiles').select('*').eq('user_id', user.id).maybeSingle();
+        if (error && error.code !== 'PGRST116') throw error;
+        if (data) {
+          const loaded = data as UserProfile;
+          setProfile(loaded);
+          setForm(loaded);
+        }
       } catch (err: any) { toast.error(err.message || 'Failed to load profile'); }
     }
     load();
@@ -437,63 +467,203 @@ export function StudentProfilePage() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      await supabase.from('profiles').upsert({ id: user.id, ...form }, { onConflict: 'id' });
+      await supabase.from('profiles').upsert({ user_id: user.id, ...form }, { onConflict: 'user_id' });
       setProfile(form); setEditing(false);
       toast.success('Profile updated');
     } catch (err: any) { toast.error(err.message || 'Failed to save'); }
     setSaving(false);
   };
 
+  const profileCompletion = (() => {
+    const fields = [profile.full_name, profile.email, profile.phone, profile.bio];
+    const filled = fields.filter(Boolean).length;
+    return Math.round((filled / fields.length) * 100);
+  })();
+
   return (
-    <motion.div initial="hidden" animate="visible" className="space-y-6 max-w-2xl">
-      <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">Profile</h1>
-      <Card className="border-zinc-200 dark:border-zinc-800">
-        <CardContent className="p-6 space-y-6">
-          {/* Avatar */}
+    <Tabs defaultValue="profile" className="max-w-6xl space-y-5">
+      <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto bg-zinc-100 p-1 dark:bg-zinc-900 sm:w-fit">
+        <TabsTrigger value="profile" className="min-h-10 px-4">Profile</TabsTrigger>
+        <TabsTrigger value="verification" className="min-h-10 px-4">Identity verification</TabsTrigger>
+      </TabsList>
+      <TabsContent value="profile">
+    <motion.div initial="hidden" animate="visible" className="space-y-6">
+      <div className="rounded-3xl border border-emerald-200 bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 p-6 text-white shadow-lg shadow-emerald-200/60">
+        <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-4">
-            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-400 to-blue-500 flex items-center justify-center text-white text-2xl font-bold shrink-0">
-              {(profile.full_name || profile.email || 'U')[0].toUpperCase()}
+            <div className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-white/30 bg-white/10 text-2xl font-bold shadow-inner backdrop-blur-sm">
+              {(profile.full_name || profile.email || 'S').charAt(0).toUpperCase()}
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-zinc-900 dark:text-white">{profile.full_name || 'Student'}</h2>
-              <p className="text-sm text-zinc-500">{profile.email}</p>
+              <p className="text-sm uppercase tracking-[0.22em] text-emerald-100">Student profile</p>
+              <h1 className="mt-1 text-2xl font-bold md:text-3xl">{profile.full_name || 'Student'}</h1>
+              <p className="text-sm text-emerald-50">{profile.email || 'Add your email address'}</p>
             </div>
           </div>
 
-          {/* Fields */}
-          <div className="space-y-4">
-            {[
-              { key: 'full_name' as const, label: 'Full Name', icon: UserCircle, type: 'text' },
-              { key: 'email' as const, label: 'Email', icon: Envelope, type: 'email' },
-              { key: 'phone' as const, label: 'Phone', icon: Phone, type: 'tel' },
-              { key: 'bio' as const, label: 'Bio', icon: ChatCenteredText, type: 'textarea' },
-            ].map(({ key, label, icon: Icon, type }) => (
-              <div key={key}>
-                <label className="text-xs font-medium text-zinc-500 mb-1 block flex items-center gap-1"><Icon size={12} />{label}</label>
-                {type === 'textarea' ? (
-                  editing ? <textarea value={form[key] || ''} onChange={(e) => setForm({ ...form, [key]: e.target.value })} rows={3} className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm text-zinc-900 dark:text-white resize-none" /> :
-                  <p className="text-sm text-zinc-900 dark:text-white">{profile[key] || 'Not set'}</p>
-                ) : (
-                  editing ? <Input type={type} value={form[key] || ''} onChange={(e) => setForm({ ...form, [key]: e.target.value })} className="border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm" /> :
-                  <p className="text-sm text-zinc-900 dark:text-white">{profile[key] || 'Not set'}</p>
-                )}
-              </div>
-            ))}
+          <div className="flex items-center gap-3">
+            <Button variant="secondary" className="bg-white/10 text-white hover:bg-white/15 border border-white/20">View public profile</Button>
+            <Button onClick={() => setEditing(true)} className="bg-white text-emerald-700 hover:bg-emerald-50">Edit profile</Button>
           </div>
+        </div>
+      </div>
 
-          <div className="flex gap-3 pt-2">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {[
+          { label: 'Courses enrolled', value: '08', icon: BookOpen, tint: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
+          { label: 'Certificates', value: '03', icon: Trophy, tint: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
+          { label: 'Progress', value: '72%', icon: TrendUp, tint: 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
+          { label: 'Profile complete', value: `${profileCompletion}%`, icon: ShieldCheck, tint: 'bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300' },
+        ].map(({ label, value, icon: Icon, tint }) => (
+          <Card key={label} className="border-zinc-200 dark:border-zinc-800">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${tint}`}>
+                  <Icon size={20} />
+                </div>
+                <span className="text-2xl font-bold text-zinc-900 dark:text-white">{value}</span>
+              </div>
+              <p className="mt-3 text-sm text-zinc-500">{label}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg text-zinc-900 dark:text-white">
+              <UserCircle size={18} className="text-emerald-600" /> Personal information
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5">
             {editing ? (
               <>
-                <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"><Check size={16} weight="bold" /> Save Changes</Button>
-                <Button variant="outline" onClick={() => { setEditing(false); setForm(profile); }}>Cancel</Button>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">Full name</label>
+                    <Input value={form.full_name || ''} onChange={(e) => setForm({ ...form, full_name: e.target.value })} className="border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">Phone</label>
+                    <Input value={form.phone || ''} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">Email</label>
+                  <Input type="email" value={form.email || ''} onChange={(e) => setForm({ ...form, email: e.target.value })} className="border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900" />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">Bio</label>
+                  <textarea
+                    value={form.bio || ''}
+                    rows={4}
+                    onChange={(e) => setForm({ ...form, bio: e.target.value })}
+                    className="w-full resize-none rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
+                  />
+                </div>
+
+                <div className="flex gap-3">
+                  <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 text-white hover:bg-emerald-700 gap-2">
+                    <Check size={16} weight="bold" /> {saving ? 'Saving...' : 'Save changes'}
+                  </Button>
+                  <Button variant="outline" onClick={() => { setEditing(false); setForm(profile); }}>Cancel</Button>
+                </div>
               </>
             ) : (
-              <Button variant="outline" onClick={() => setEditing(true)} className="gap-2"><Pencil size={16} /> Edit Profile</Button>
+              <>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <InfoRow icon={UserCircle} label="Full name" value={profile.full_name || 'Not added'} />
+                  <InfoRow icon={Envelope} label="Email" value={profile.email || 'Not added'} />
+                  <InfoRow icon={Phone} label="Phone" value={profile.phone || 'Not added'} />
+                  <InfoRow icon={ShieldCheck} label="Account status" value="Active" />
+                </div>
+
+                <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-900/60">
+                  <div className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-900 dark:text-white">
+                    <ChatCenteredText size={16} className="text-emerald-600" /> Bio
+                  </div>
+                  <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-300">{profile.bio || 'A short profile description helps classmates and mentors know more about your learning goals.'}</p>
+                </div>
+              </>
             )}
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+
+        <div className="space-y-6">
+          <Card className="border-zinc-200 dark:border-zinc-800">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-lg text-zinc-900 dark:text-white">
+                <ShieldCheck size={18} className="text-emerald-600" /> Account overview
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-2xl bg-emerald-50 p-3 dark:bg-emerald-900/20">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-zinc-600 dark:text-zinc-300">Profile completion</span>
+                  <span className="font-semibold text-emerald-700 dark:text-emerald-300">{profileCompletion}%</span>
+                </div>
+                <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-emerald-100 dark:bg-emerald-900/40">
+                  <div className="h-full rounded-full bg-emerald-600" style={{ width: `${profileCompletion}%` }} />
+                </div>
+              </div>
+
+              <div className="space-y-3 text-sm">
+                <div className="flex items-center justify-between rounded-xl border border-zinc-200 px-3 py-2 dark:border-zinc-700">
+                  <span className="text-zinc-500">Learning goal</span>
+                  <span className="font-medium text-zinc-900 dark:text-white">Frontend Development</span>
+                </div>
+                <div className="flex items-center justify-between rounded-xl border border-zinc-200 px-3 py-2 dark:border-zinc-700">
+                  <span className="text-zinc-500">Member since</span>
+                  <span className="font-medium text-zinc-900 dark:text-white">Jan 2026</span>
+                </div>
+                <div className="flex items-center justify-between rounded-xl border border-zinc-200 px-3 py-2 dark:border-zinc-700">
+                  <span className="text-zinc-500">Study streak</span>
+                  <span className="font-medium text-zinc-900 dark:text-white">12 days</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-zinc-200 dark:border-zinc-800">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-lg text-zinc-900 dark:text-white">
+                <Key size={18} className="text-amber-600" /> Security
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Button variant="outline" className="w-full justify-between">
+                Change password <ArrowRight size={16} />
+              </Button>
+              <Button variant="outline" className="w-full justify-between">
+                Manage notifications <ArrowRight size={16} />
+              </Button>
+              <Button variant="outline" className="w-full justify-between">
+                Privacy settings <ArrowRight size={16} />
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </motion.div>
+      </TabsContent>
+      <TabsContent value="verification">
+        <IdentityVerificationPanel />
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+function InfoRow({ icon: Icon, label, value }: { icon: typeof UserCircle; label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-900/60">
+      <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">
+        <Icon size={14} className="text-emerald-600" /> {label}
+      </div>
+      <p className="text-sm font-medium text-zinc-900 dark:text-white">{value}</p>
+    </div>
   );
 }
 

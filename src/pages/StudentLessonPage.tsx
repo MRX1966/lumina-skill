@@ -57,14 +57,17 @@ export function StudentLessonPage() {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) { setError('Please log in to access lessons'); setLoading(false); return; }
 
-        const [{ data: enrollData }, { data: courseData }] = await Promise.all([
-          supabase.from('enrollments').select('*').eq('user_id', user.id).eq('course_id', courseId).single(),
-          supabase.from('courses').select('*, instructors:instructor_id(name)').eq('id', courseId).single(),
+        const [{ data: enrollData, error: enrollError }, { data: courseData, error: courseError }] = await Promise.all([
+          supabase.from('enrollments').select('*').eq('user_id', user.id).eq('course_id', courseId).maybeSingle(),
+          supabase.from('courses').select('*').eq('id', courseId).maybeSingle(),
         ]);
-        setEnrollment(enrollData || null);
-        setCourse(courseData as unknown as CourseRow);
+        if (enrollError && enrollError.code !== 'PGRST116') throw enrollError;
+        if (courseError && courseError.code !== 'PGRST116') throw courseError;
 
-        const { data: moduleData } = await supabase.from('modules').select('*, lessons(*)').eq('course_id', courseId).order('sort_order', { ascending: true });
+        setEnrollment(enrollData || null);
+        setCourse((courseData as CourseRow | null) || null);
+
+        const { data: moduleData } = await supabase.from('course_modules').select('*, lessons(*)').eq('course_id', courseId).order('sort_order', { ascending: true });
         setModules(moduleData as unknown as ModuleRow[]);
 
         const firstLessonId = (moduleData?.[0]?.lessons?.[0]?.id) || '';

@@ -26,6 +26,12 @@ export function PublicLayout() {
 
   return (
     <div className="min-h-[100dvh] flex flex-col bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[60] focus:rounded-lg focus:bg-white focus:px-4 focus:py-3 focus:text-zinc-900 focus:shadow-lg"
+      >
+        Skip to content
+      </a>
       <header className={`fixed top-0 left-0 right-0 z-30 transition-all duration-300 ${
         scrolled ? 'bg-white/80 dark:bg-zinc-950/80 backdrop-blur-lg border-b border-zinc-200/50 dark:border-zinc-800/50' : 'bg-transparent'
       }`}>
@@ -53,7 +59,7 @@ export function PublicLayout() {
             {isLoggedIn ? (
               <>
                 <Link
-                  to={user?.role === 'admin' ? ROUTES.adminDashboard : ROUTES.studentDashboard}
+                  to={profile?.role === 'admin' || profile?.role === 'super_admin' ? ROUTES.adminDashboard : ROUTES.studentDashboard}
                   className="hidden sm:inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
                 >
                   <User size={16} />
@@ -70,7 +76,13 @@ export function PublicLayout() {
                 <Link to={ROUTES.register} className="px-4 py-2 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">Get Started</Link>
               </>
             )}
-            <button onClick={() => setMobileOpen(true)} className="md:hidden p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800">
+            <button
+              type="button"
+              aria-label="Open site navigation"
+              aria-expanded={mobileOpen}
+              onClick={() => setMobileOpen(true)}
+              className="md:hidden min-h-11 min-w-11 p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            >
               <List size={20} />
             </button>
           </div>
@@ -86,7 +98,7 @@ export function PublicLayout() {
         onLogout={handleLogout}
       />
 
-      <main className="flex-1 pt-16">
+      <main id="main-content" tabIndex={-1} className="flex-1 pt-16 focus-visible:outline-none">
         <Outlet />
       </main>
 

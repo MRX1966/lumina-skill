@@ -4,7 +4,22 @@ import { ROUTES } from '@/constants/navigation';
 import { CircleNotch } from '@phosphor-icons/react';
 
 interface ProtectedRouteProps {
-  requiredRole?: 'student' | 'admin';
+  requiredRole?: 'student' | 'admin' | 'super_admin';
+}
+
+function hasRoleAccess(profileRole: string | null | undefined, requiredRole?: 'student' | 'admin' | 'super_admin') {
+  if (!requiredRole) return true;
+  if (!profileRole) return false;
+
+  if (requiredRole === 'admin') {
+    return profileRole === 'admin' || profileRole === 'super_admin';
+  }
+
+  if (requiredRole === 'student') {
+    return profileRole === 'student';
+  }
+
+  return profileRole === 'super_admin';
 }
 
 export function ProtectedRoute({ requiredRole }: ProtectedRouteProps) {
@@ -26,8 +41,8 @@ export function ProtectedRoute({ requiredRole }: ProtectedRouteProps) {
     return <Navigate to={ROUTES.login} state={{ from: location }} replace />;
   }
 
-  if (requiredRole && profile && profile.role !== requiredRole) {
-    const redirectTo = profile.role === 'admin' ? ROUTES.adminDashboard : ROUTES.studentDashboard;
+  if (requiredRole && !hasRoleAccess(profile?.role, requiredRole)) {
+    const redirectTo = profile?.role === 'admin' || profile?.role === 'super_admin' ? ROUTES.adminDashboard : ROUTES.studentDashboard;
     return <Navigate to={redirectTo} replace />;
   }
 
