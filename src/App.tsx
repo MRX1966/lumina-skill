@@ -20,6 +20,7 @@ const PaymentFailedPage = lazy(() => import('@/pages/PaymentPages').then((module
 const PaymentCancelledPage = lazy(() => import('@/pages/PaymentPages').then((module) => ({ default: module.PaymentCancelledPage })));
 const StudentDashboard = lazy(() => import('@/pages/StudentDashboardPage').then((module) => ({ default: module.StudentDashboard })));
 const StudentCoursesPage = lazy(() => import('@/pages/StudentDashboardPage').then((module) => ({ default: module.StudentCoursesPage })));
+const StudentCourseHistoryPage = lazy(() => import('@/pages/StudentCourseHistoryPage').then((module) => ({ default: module.StudentCourseHistoryPage })));
 const StudentLessonPage = lazy(() => import('@/pages/StudentLessonPage').then((module) => ({ default: module.StudentLessonPage })));
 const StudentAssignmentsPage = lazy(() => import('@/pages/StudentPages').then((module) => ({ default: module.StudentAssignmentsPage })));
 const StudentQuizzesPage = lazy(() => import('@/pages/StudentPages').then((module) => ({ default: module.StudentQuizzesPage })));
@@ -84,6 +85,7 @@ function App() {
             <Route index element={<Navigate to={ROUTES.studentDashboard} replace />} />
             <Route path="dashboard" element={<StudentDashboard />} />
             <Route path="courses" element={<StudentCoursesPage />} />
+            <Route path="history" element={<StudentCourseHistoryPage />} />
             <Route path="courses/:courseId/lessons" element={<StudentLessonPage />} />
             <Route path="assignments" element={<StudentAssignmentsPage />} />
             <Route path="quizzes" element={<StudentQuizzesPage />} />

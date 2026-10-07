@@ -3,13 +3,13 @@ import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   House, BookOpen, Info, Envelope, User, Users, GearSix,
-  SignOut, GraduationCap, X, ChartLine, Wallet, Exam, Certificate, ClipboardText
+  SignOut, GraduationCap, X, ChartLine, Wallet, Exam, Certificate, ClipboardText, ClockCounterClockwise
 } from '@phosphor-icons/react';
 import { BRAND_NAME } from '@/constants/navigation';
 
 const IconMap: Record<string, React.ElementType> = {
   House, BookOpen, Info, Envelope, User, Users, GearSix,
-  ChartLine, Wallet, Exam, Certificate, ClipboardText, GraduationCap
+  ChartLine, Wallet, Exam, Certificate, ClipboardText, GraduationCap, ClockCounterClockwise
 };
 
 interface MobileDrawerProps {

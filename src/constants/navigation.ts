@@ -19,6 +19,7 @@ export const ROUTES = {
   paymentCancelled: '/payment/cancelled',
   studentDashboard: '/student/dashboard',
   studentCourses: '/student/courses',
+  studentCourseHistory: '/student/history',
   studentLesson: '/student/courses/:courseId/lessons',
   studentAssignments: '/student/assignments',
   studentQuizzes: '/student/quizzes',
@@ -49,6 +50,7 @@ export const publicNavItems: NavItem[] = [
 export const studentNavItems: NavItem[] = [
   { label: 'Dashboard', path: ROUTES.studentDashboard, icon: 'House' },
   { label: 'My Courses', path: ROUTES.studentCourses, icon: 'BookOpen' },
+  { label: 'Course History', path: ROUTES.studentCourseHistory, icon: 'ClockCounterClockwise' },
   { label: 'Assignments', path: ROUTES.studentAssignments, icon: 'ClipboardText' },
   { label: 'Quizzes', path: ROUTES.studentQuizzes, icon: 'Exam' },
   { label: 'Certificates', path: ROUTES.studentCertificates, icon: 'Certificate' },

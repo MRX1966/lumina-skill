@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { House, BookOpen, ClipboardText, Exam, Certificate, UserCircle, GearSix, SignOut, Bell, List, MagnifyingGlass, GraduationCap, DotsThreeVertical, TrendUp, BellRinging, NotePencil } from '@phosphor-icons/react';
+import { House, BookOpen, ClipboardText, Exam, Certificate, UserCircle, GearSix, SignOut, Bell, List, MagnifyingGlass, GraduationCap, DotsThreeVertical, TrendUp, BellRinging, NotePencil, ClockCounterClockwise } from '@phosphor-icons/react';
 import { ROUTES, BRAND_NAME, studentNavItems } from '@/constants/navigation';
 import { MobileDrawer } from '@/components/MobileDrawer';
 import { useAuth } from '@/contexts/AuthContext';
 
 const IconMap: Record<string, React.ElementType> = {
-  House, BookOpen, ClipboardText, Exam, Certificate, UserCircle, GearSix, TrendUp, BellRinging
+  House, BookOpen, ClipboardText, Exam, Certificate, UserCircle, GearSix, TrendUp, BellRinging, ClockCounterClockwise
 };
 
 export function StudentLayout() {

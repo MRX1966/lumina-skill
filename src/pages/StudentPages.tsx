@@ -475,7 +475,7 @@ export function StudentProfilePage() {
   };
 
   const profileCompletion = (() => {
-    const fields = [profile.full_name, profile.email, profile.phone, profile.bio];
+    const fields = [profile.full_name, profile.email, profile.phone];
     const filled = fields.filter(Boolean).length;
     return Math.round((filled / fields.length) * 100);
   })();
@@ -506,27 +506,6 @@ export function StudentProfilePage() {
             <Button onClick={() => setEditing(true)} className="bg-white text-emerald-700 hover:bg-emerald-50">Edit profile</Button>
           </div>
         </div>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {[
-          { label: 'Courses enrolled', value: '08', icon: BookOpen, tint: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
-          { label: 'Certificates', value: '03', icon: Trophy, tint: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
-          { label: 'Progress', value: '72%', icon: TrendUp, tint: 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
-          { label: 'Profile complete', value: `${profileCompletion}%`, icon: ShieldCheck, tint: 'bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300' },
-        ].map(({ label, value, icon: Icon, tint }) => (
-          <Card key={label} className="border-zinc-200 dark:border-zinc-800">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${tint}`}>
-                  <Icon size={20} />
-                </div>
-                <span className="text-2xl font-bold text-zinc-900 dark:text-white">{value}</span>
-              </div>
-              <p className="mt-3 text-sm text-zinc-500">{label}</p>
-            </CardContent>
-          </Card>
-        ))}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
@@ -610,20 +589,6 @@ export function StudentProfilePage() {
                 </div>
               </div>
 
-              <div className="space-y-3 text-sm">
-                <div className="flex items-center justify-between rounded-xl border border-zinc-200 px-3 py-2 dark:border-zinc-700">
-                  <span className="text-zinc-500">Learning goal</span>
-                  <span className="font-medium text-zinc-900 dark:text-white">Frontend Development</span>
-                </div>
-                <div className="flex items-center justify-between rounded-xl border border-zinc-200 px-3 py-2 dark:border-zinc-700">
-                  <span className="text-zinc-500">Member since</span>
-                  <span className="font-medium text-zinc-900 dark:text-white">Jan 2026</span>
-                </div>
-                <div className="flex items-center justify-between rounded-xl border border-zinc-200 px-3 py-2 dark:border-zinc-700">
-                  <span className="text-zinc-500">Study streak</span>
-                  <span className="font-medium text-zinc-900 dark:text-white">12 days</span>
-                </div>
-              </div>
             </CardContent>
           </Card>
 
